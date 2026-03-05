@@ -26,6 +26,8 @@ const AEAD_TAG_SIZE: usize = 16;
 /// Errors from the FMP stream reader.
 #[derive(Debug)]
 pub enum StreamError {
+    /// Unknown FMP version — not a FIPS connection (e.g., TLS ClientHello).
+    UnknownVersion(u8),
     /// Unknown FMP phase byte — protocol error, close connection.
     UnknownPhase(u8),
     /// Payload length exceeds the connection's MTU — corrupted or malicious.
@@ -39,6 +41,7 @@ pub enum StreamError {
 impl std::fmt::Display for StreamError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            StreamError::UnknownVersion(v) => write!(f, "unknown FMP version: {}", v),
             StreamError::UnknownPhase(p) => write!(f, "unknown FMP phase: 0x{:02x}", p),
             StreamError::PayloadTooLarge { payload_len, max_payload_len } => {
                 write!(f, "payload_len {} exceeds max {}", payload_len, max_payload_len)
@@ -83,6 +86,7 @@ const MSG2_PAYLOAD_LEN: u16 = (MSG2_WIRE_SIZE - PREFIX_SIZE) as u16;
 ///
 /// # Errors
 ///
+/// * `UnknownVersion` — non-zero version nibble (not a FIPS connection)
 /// * `UnknownPhase` — unrecognized phase nibble (protocol error)
 /// * `PayloadTooLarge` — established frame exceeds MTU
 /// * `HandshakeSizeMismatch` — handshake packet has wrong payload_len
@@ -95,7 +99,13 @@ pub async fn read_fmp_packet<R: AsyncRead + Unpin>(
     let mut prefix = [0u8; PREFIX_SIZE];
     reader.read_exact(&mut prefix).await?;
 
+    let version = prefix[0] >> 4;
     let phase = prefix[0] & 0x0F;
+
+    if version != 0 {
+        return Err(StreamError::UnknownVersion(version));
+    }
+
     let payload_len = u16::from_le_bytes([prefix[2], prefix[3]]);
 
     // Compute remaining bytes based on phase
@@ -244,6 +254,17 @@ mod tests {
 
         let p3 = read_fmp_packet(&mut cursor, 1400).await.unwrap();
         assert_eq!(p3.len(), MSG2_WIRE_SIZE);
+    }
+
+    #[tokio::test]
+    async fn test_unknown_version_error() {
+        // TLS ClientHello starts with 0x16 (record type "Handshake"),
+        // which parses as FMP version=1, phase=6.
+        let mut frame = vec![0u8; 100];
+        frame[0] = 0x16;
+        let mut cursor = Cursor::new(frame);
+        let err = read_fmp_packet(&mut cursor, 1400).await.unwrap_err();
+        assert!(matches!(err, StreamError::UnknownVersion(1)));
     }
 
     #[tokio::test]
