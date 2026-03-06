@@ -544,6 +544,11 @@ impl ActivePeer {
         self.session_start.elapsed().as_millis() as u32
     }
 
+    /// When this peer's session started (for link-dead fallback timing).
+    pub fn session_start(&self) -> Instant {
+        self.session_start
+    }
+
     // === Heartbeat ===
 
     /// When we last sent a heartbeat to this peer.

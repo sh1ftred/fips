@@ -452,11 +452,18 @@ impl Node {
         let mut dead_peers: Vec<NodeAddr> = Vec::new();
 
         for (node_addr, peer) in self.peers.iter() {
-            // Check liveness via MMP receiver last_recv_time
-            if let Some(mmp) = peer.mmp()
-                && let Some(last_recv) = mmp.receiver.last_recv_time()
-                && now.duration_since(last_recv) >= dead_timeout
-            {
+            // Check liveness via MMP receiver last_recv_time.
+            // Fall back to session_start for peers that never sent data.
+            let is_dead = if let Some(mmp) = peer.mmp() {
+                let reference_time = mmp
+                    .receiver
+                    .last_recv_time()
+                    .unwrap_or(peer.session_start());
+                now.duration_since(reference_time) >= dead_timeout
+            } else {
+                false
+            };
+            if is_dead {
                 dead_peers.push(*node_addr);
                 continue;
             }
