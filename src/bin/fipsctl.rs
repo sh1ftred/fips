@@ -4,6 +4,8 @@
 //! query command, and pretty-prints the JSON response.
 
 use clap::{Parser, Subcommand};
+use fips::config::{write_key_file, write_pub_file};
+use fips::{encode_nsec, Identity};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
@@ -27,6 +29,18 @@ enum Commands {
     Show {
         #[command(subcommand)]
         what: ShowCommands,
+    },
+    /// Generate a new FIPS identity keypair
+    Keygen {
+        /// Output directory for fips.key and fips.pub
+        #[arg(short = 'd', long = "dir", default_value = "/etc/fips")]
+        dir: PathBuf,
+        /// Overwrite existing key files
+        #[arg(short = 'f', long = "force")]
+        force: bool,
+        /// Print nsec and npub to stdout instead of writing files
+        #[arg(short = 's', long = "stdout")]
+        stdout: bool,
     },
 }
 
@@ -88,9 +102,61 @@ fn default_socket_path() -> PathBuf {
 fn main() {
     let cli = Cli::parse();
 
+    // Commands that don't require a running daemon
+    match &cli.command {
+        Commands::Keygen {
+            dir,
+            force,
+            stdout,
+        } => {
+            let identity = Identity::generate();
+            let nsec = encode_nsec(&identity.keypair().secret_key());
+            let npub = identity.npub();
+
+            if *stdout {
+                println!("{}", nsec);
+                println!("{}", npub);
+                return;
+            }
+
+            let key_path = dir.join("fips.key");
+            let pub_path = dir.join("fips.pub");
+
+            if key_path.exists() && !force {
+                eprintln!("error: key file already exists: {}", key_path.display());
+                eprintln!("Use --force to overwrite.");
+                std::process::exit(1);
+            }
+
+            if let Err(e) = std::fs::create_dir_all(dir) {
+                eprintln!("error: cannot create directory {}: {}", dir.display(), e);
+                std::process::exit(1);
+            }
+
+            if let Err(e) = write_key_file(&key_path, &nsec) {
+                eprintln!("error: failed to write key file: {}", e);
+                std::process::exit(1);
+            }
+
+            if let Err(e) = write_pub_file(&pub_path, &npub) {
+                eprintln!("error: failed to write pub file: {}", e);
+                std::process::exit(1);
+            }
+
+            eprintln!("{}", npub);
+            eprintln!("Key files written to: {}/", dir.display());
+            eprintln!();
+            eprintln!("NOTE: Set 'node.identity.persistent: true' in fips.yaml");
+            eprintln!("      or these keys will be overwritten on next daemon start.");
+            return;
+        }
+        Commands::Show { .. } => {}
+    }
+
     let socket_path = cli.socket.unwrap_or_else(default_socket_path);
     let command_name = match &cli.command {
         Commands::Show { what } => what.command_name(),
+        Commands::Keygen { .. } => unreachable!(),
     };
 
     // Connect to the control socket

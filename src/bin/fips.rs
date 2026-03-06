@@ -3,6 +3,7 @@
 //! Loads configuration and creates the top-level node instance.
 
 use clap::Parser;
+use fips::config::{resolve_identity, IdentitySource};
 use fips::{Config, Node};
 use std::path::PathBuf;
 use tracing::{error, info, warn, Level};
@@ -63,14 +64,24 @@ async fn main() {
         }
     }
 
-    // Log identity status
-    if config.has_identity() {
-        info!("Using configured identity");
-    } else {
-        warn!("No identity configured, generating ephemeral keypair");
+    // Identity provisioning: config nsec > key file > generate ephemeral
+    let resolved = match resolve_identity(&config, &loaded_paths) {
+        Ok(r) => r,
+        Err(e) => {
+            error!("Failed to resolve identity: {}", e);
+            std::process::exit(1);
+        }
+    };
+    match &resolved.source {
+        IdentitySource::Config => info!("Using identity from configuration"),
+        IdentitySource::KeyFile(p) => info!(path = %p.display(), "Loaded persistent identity from key file"),
+        IdentitySource::Generated(p) => info!(path = %p.display(), "Generated persistent identity, saved to key file"),
+        IdentitySource::Ephemeral => info!("Using ephemeral identity (new keypair each start)"),
     }
 
-    // Create node
+    // Create node with resolved identity
+    let mut config = config;
+    config.node.identity.nsec = Some(resolved.nsec);
     info!("Creating node");
     let mut node = match Node::new(config) {
         Ok(node) => node,
