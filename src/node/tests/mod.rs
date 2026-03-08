@@ -14,6 +14,7 @@ mod handshake;
 mod routing;
 mod session;
 mod spanning_tree;
+mod tcp;
 mod unit;
 
 pub(super) fn make_node() -> Node {
