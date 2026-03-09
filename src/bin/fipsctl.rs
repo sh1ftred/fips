@@ -95,11 +95,14 @@ impl ShowCommands {
 }
 
 /// Determine the default socket path.
+///
+/// Checks the system-wide path first (used when the daemon runs as a
+/// systemd service), then falls back to the user's XDG runtime directory.
 fn default_socket_path() -> PathBuf {
-    if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
-        PathBuf::from(format!("{runtime_dir}/fips/control.sock"))
-    } else if Path::new("/run/fips/control.sock").exists() {
+    if Path::new("/run/fips/control.sock").exists() {
         PathBuf::from("/run/fips/control.sock")
+    } else if let Ok(runtime_dir) = std::env::var("XDG_RUNTIME_DIR") {
+        PathBuf::from(format!("{runtime_dir}/fips/control.sock"))
     } else {
         PathBuf::from("/tmp/fips-control.sock")
     }
@@ -174,7 +177,14 @@ fn main() {
                 socket_path.display(),
                 e
             );
-            eprintln!("Is the FIPS daemon running?");
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                eprintln!(
+                    "Hint: add your user to the 'fips' group: sudo usermod -aG fips $USER"
+                );
+                eprintln!("Then log out and back in for the change to take effect.");
+            } else {
+                eprintln!("Is the FIPS daemon running?");
+            }
             std::process::exit(1);
         }
     };
