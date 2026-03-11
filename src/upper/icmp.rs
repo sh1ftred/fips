@@ -59,12 +59,13 @@ const ICMPV6_HEADER_LEN: usize = 8;
 /// Maximum original packet bytes to include in ICMPv6 error.
 const MAX_ORIGINAL_PACKET: usize = MIN_IPV6_MTU - IPV6_HEADER_LEN - ICMPV6_HEADER_LEN;
 
-/// FIPS encapsulation overhead for data packets (no piggybacked coordinates).
+/// FIPS base encapsulation overhead for DataPacket (excluding port payload).
 ///
 /// This is the fixed overhead for a SessionDatagram carrying an FSP DataPacket,
-/// used to compute `effective_ipv6_mtu()` and TCP MSS clamping. Coordinate
-/// piggybacking (CP flag) adds variable overhead on top of this; the send path
-/// guards against exceeding the transport MTU when coords are included.
+/// used by the send path's CP-flag guard to check whether piggybacked coords
+/// fit within the transport MTU. For IPv6 effective MTU calculations, use
+/// [`FIPS_IPV6_OVERHEAD`] which accounts for port multiplexing and header
+/// compression.
 ///
 /// Breakdown (traced through the actual send path):
 ///
@@ -89,13 +90,26 @@ const MAX_ORIGINAL_PACKET: usize = MIN_IPV6_MTU - IPV6_HEADER_LEN - ICMPV6_HEADE
 /// body after msg_type is consumed by the dispatch layer.
 pub const FIPS_OVERHEAD: u16 = 16 + 16 + 5 + 35 + 12 + 6 + 16; // 106 bytes
 
+/// FIPS encapsulation overhead for compressed IPv6 shim traffic (port 256).
+///
+/// With port multiplexing (4 bytes) and IPv6 header compression (format byte +
+/// 6 residual bytes, stripping 34 bytes of addresses/version/payload length),
+/// the net overhead for IPv6 packets is 77 bytes.
+///
+/// ```text
+/// Wire size = FIPS_OVERHEAD(106) + port_header(4) + format(1) + residual(6) + upper_payload
+///           = 117 + (ipv6_len - 40)
+///           = ipv6_len + 77
+/// ```
+pub const FIPS_IPV6_OVERHEAD: u16 = 77;
+
 /// Calculate the effective IPv6 MTU for FIPS-encapsulated traffic.
 ///
 /// Given a transport MTU (e.g., UDP payload size), returns the maximum
 /// IPv6 packet size (including IPv6 header) that can be transmitted
-/// through the FIPS mesh after encapsulation overhead.
+/// through the FIPS mesh after IPv6 header compression.
 pub fn effective_ipv6_mtu(transport_mtu: u16) -> u16 {
-    transport_mtu.saturating_sub(FIPS_OVERHEAD)
+    transport_mtu.saturating_sub(FIPS_IPV6_OVERHEAD)
 }
 
 /// Check if we should send an ICMPv6 error for this packet.

@@ -647,8 +647,8 @@ routing decisions but retains its own end-to-end encryption and identity.
 | LookupResponse | ~400 bytes | Response to discovery | Yes (greedy routed) |
 | SessionDatagram + SessionSetup | ~232–402 bytes | Session establishment | Yes (routed) |
 | SessionDatagram + SessionAck | ~170 bytes | Session confirmation | Yes (routed) |
-| SessionDatagram + Data (minimal) | 106 bytes + payload | Bulk traffic | Yes (routed) |
-| SessionDatagram + Data (with CP) | 106 + coords + payload | Warmup/recovery | Yes (routed) |
+| SessionDatagram + Data (minimal) | 77 bytes + IPv6 payload | Bulk IPv6 traffic (compressed) | Yes (routed) |
+| SessionDatagram + Data (with CP) | 77 + coords + IPv6 payload | Warmup/recovery (compressed) | Yes (routed) |
 | SessionDatagram + CoordsRequired | 70 bytes | Cache miss error | Yes (routed) |
 | SessionDatagram + PathBroken | 70+ bytes | Dead-end error | Yes (routed) |
 | Disconnect | 2 bytes | Link teardown | No (peer-to-peer) |

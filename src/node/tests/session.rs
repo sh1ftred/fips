@@ -243,7 +243,7 @@ async fn test_session_direct_peer_data_transfer() {
     let test_data = b"Hello, FIPS session!";
     nodes[0]
         .node
-        .send_session_data(&node1_addr, test_data)
+        .send_session_data(&node1_addr, 0, 0, test_data)
         .await
         .expect("send_session_data failed");
 
@@ -378,7 +378,7 @@ async fn test_session_3node_forwarded_data() {
     let test_data = b"End-to-end through transit node B";
     nodes[0]
         .node
-        .send_session_data(&node2_addr, test_data)
+        .send_session_data(&node2_addr, 0, 0, test_data)
         .await
         .expect("send_session_data failed");
 
@@ -438,7 +438,7 @@ async fn test_session_send_data_no_session_fails() {
     let mut node = make_node();
     let fake_addr = make_node_addr(0xAA);
 
-    let result = node.send_session_data(&fake_addr, b"test").await;
+    let result = node.send_session_data(&fake_addr, 0, 0, b"test").await;
     assert!(result.is_err(), "Should fail with no session");
 }
 
@@ -618,11 +618,16 @@ async fn test_session_100_nodes() {
         let dest_addr = all_info[dst].0;
         let src_addr = all_info[src].0;
 
+        // Build IPv6 packets with pair index as payload
+        let src_fips = crate::FipsAddress::from_node_addr(&src_addr);
+        let dst_fips = crate::FipsAddress::from_node_addr(&dest_addr);
+
         // Forward: initiator → responder
         let fwd_payload = format!("fwd-{}", pair_idx).into_bytes();
+        let fwd_ipv6 = build_ipv6_packet(&src_fips, &dst_fips, &fwd_payload);
         match nodes[src]
             .node
-            .send_session_data(&dest_addr, &fwd_payload)
+            .send_ipv6_packet(&dest_addr, &fwd_ipv6)
             .await
         {
             Ok(()) => send_forward_ok += 1,
@@ -634,9 +639,10 @@ async fn test_session_100_nodes() {
         // Reverse: responder → initiator
         // (Responder should already be Established after XK msg3)
         let rev_payload = format!("rev-{}", pair_idx).into_bytes();
+        let rev_ipv6 = build_ipv6_packet(&dst_fips, &src_fips, &rev_payload);
         match nodes[dst]
             .node
-            .send_session_data(&src_addr, &rev_payload)
+            .send_ipv6_packet(&src_addr, &rev_ipv6)
             .await
         {
             Ok(()) => send_reverse_ok += 1,
@@ -671,13 +677,21 @@ async fn test_session_100_nodes() {
         let fwd_payload = format!("fwd-{}", pair_idx).into_bytes();
         let rev_payload = format!("rev-{}", pair_idx).into_bytes();
 
-        if delivered_per_node[dst].contains(&fwd_payload) {
+        // After decompression, TUN receives full IPv6 packets.
+        // Check that delivered packet's upper-layer payload matches.
+        let fwd_found = delivered_per_node[dst]
+            .iter()
+            .any(|pkt| pkt.len() >= 40 && pkt[40..] == fwd_payload);
+        if fwd_found {
             fwd_delivered += 1;
         } else if fwd_missing.len() < 20 {
             fwd_missing.push((src, dst));
         }
 
-        if delivered_per_node[src].contains(&rev_payload) {
+        let rev_found = delivered_per_node[src]
+            .iter()
+            .any(|pkt| pkt.len() >= 40 && pkt[40..] == rev_payload);
+        if rev_found {
             rev_delivered += 1;
         } else if rev_missing.len() < 20 {
             rev_missing.push((src, dst));
@@ -1836,7 +1850,7 @@ async fn test_multihop_pmtud_heterogeneous_mtu() {
     // With coords (~66 extra), the wire could exceed B's recv buffer.
     for _ in 0..5 {
         let small = build_ipv6_packet(&src_fips, &dst_fips, &[0u8; 10]);
-        nodes[0].node.send_session_data(&node2_addr, &small).await.unwrap();
+        nodes[0].node.send_ipv6_packet(&node2_addr, &small).await.unwrap();
     }
     drain_to_quiescence(&mut nodes).await;
 
@@ -1855,7 +1869,7 @@ async fn test_multihop_pmtud_heterogeneous_mtu() {
 
     // Send the oversized packet — B should fail to forward and send
     // MtuExceeded signal back.
-    nodes[0].node.send_session_data(&node2_addr, &ipv6_packet).await.unwrap();
+    nodes[0].node.send_ipv6_packet(&node2_addr, &ipv6_packet).await.unwrap();
     drain_to_quiescence(&mut nodes).await;
 
     // Verify PathMtuState was updated on A

@@ -155,18 +155,21 @@ demultiplexing. FSP provides a datagram service to applications above.
 
 See [fips-session-layer.md](fips-session-layer.md) for the FSP specification.
 
-**IPv6 adaptation layer**: Sits above FSP and adapts the FIPS datagram
-service for unmodified IPv6 applications. Provides DNS resolution (npub →
-fd00::/8 address), identity cache management, MTU enforcement, and a TUN
-interface. This is the primary way existing applications use the FIPS mesh.
+**IPv6 adaptation layer**: Sits above FSP as a service on port 256, adapting
+the FIPS datagram service for unmodified IPv6 applications. Provides DNS
+resolution (npub → fd00::/8 address), identity cache management, IPv6 header
+compression, MTU enforcement, and a TUN interface. This is the primary way
+existing applications use the FIPS mesh.
 
 See [fips-ipv6-adapter.md](fips-ipv6-adapter.md) for the IPv6 adapter.
 
 ### Node Architecture
 
-Two application interfaces sit at the top of the stack: a native datagram
-API addressed by npub, and an IPv6 TUN adapter that maps npubs to `fd00::/8`
-addresses so unmodified IP applications can use the network transparently.
+Application services sit at the top of the stack, dispatched by FSP port
+number: the IPv6 TUN adapter (port 256) maps npubs to `fd00::/8` addresses
+with header compression so unmodified IP applications can use the network
+transparently, while the native datagram API addresses destinations directly
+by npub.
 
 ![Node Architecture](diagrams/fips-node-architecture.svg)
 

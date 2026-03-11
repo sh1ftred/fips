@@ -10,7 +10,7 @@ use crate::node::session_wire::{
     build_fsp_header, fsp_prepend_inner_header, fsp_strip_inner_header,
     parse_encrypted_coords, FspCommonPrefix, FspEncryptedHeader, FSP_COMMON_PREFIX_SIZE,
     FSP_FLAG_CP, FSP_FLAG_K, FSP_HEADER_SIZE, FSP_PHASE_ESTABLISHED, FSP_PHASE_MSG1,
-    FSP_PHASE_MSG2, FSP_PHASE_MSG3,
+    FSP_PHASE_MSG2, FSP_PHASE_MSG3, FSP_PORT_HEADER_SIZE, FSP_PORT_IPV6_SHIM,
 };
 use crate::protocol::{coords_wire_size, encode_coords};
 use crate::upper::icmp::FIPS_OVERHEAD;
@@ -271,21 +271,53 @@ impl Node {
         // Dispatch by msg_type
         match SessionMessageType::from_byte(msg_type) {
             Some(SessionMessageType::DataPacket) => {
-                // msg_type 0x10: deliver rest (IPv6 payload) to TUN
-                let mut packet = rest.to_vec();
-                if ce_flag {
-                    mark_ipv6_ecn_ce(&mut packet);
-                    self.stats_mut().congestion.record_ce_received();
+                // msg_type 0x10: port-multiplexed service dispatch
+                if rest.len() < FSP_PORT_HEADER_SIZE {
+                    debug!(len = rest.len(), "DataPacket too short for port header");
+                    return;
                 }
-                if let Some(tun_tx) = &self.tun_tx {
-                    if let Err(e) = tun_tx.send(packet) {
-                        debug!(error = %e, "Failed to deliver decrypted packet to TUN");
+                let dst_port = u16::from_le_bytes([rest[2], rest[3]]);
+                let service_payload = &rest[FSP_PORT_HEADER_SIZE..];
+
+                match dst_port {
+                    FSP_PORT_IPV6_SHIM => {
+                        use crate::FipsAddress;
+                        let src_ipv6 = FipsAddress::from_node_addr(src_addr).to_ipv6().octets();
+                        let dst_ipv6 = FipsAddress::from_node_addr(self.node_addr()).to_ipv6().octets();
+
+                        match crate::upper::ipv6_shim::decompress_ipv6(service_payload, src_ipv6, dst_ipv6) {
+                            Some(mut packet) => {
+                                if ce_flag {
+                                    mark_ipv6_ecn_ce(&mut packet);
+                                    self.stats_mut().congestion.record_ce_received();
+                                }
+                                if let Some(tun_tx) = &self.tun_tx {
+                                    if let Err(e) = tun_tx.send(packet) {
+                                        debug!(error = %e, "Failed to deliver decompressed IPv6 packet to TUN");
+                                    }
+                                } else {
+                                    trace!(
+                                        src = %self.peer_display_name(src_addr),
+                                        "IPv6 shim packet decompressed (no TUN interface)"
+                                    );
+                                }
+                            }
+                            None => {
+                                debug!(
+                                    src = %self.peer_display_name(src_addr),
+                                    len = service_payload.len(),
+                                    "IPv6 shim decompression failed"
+                                );
+                            }
+                        }
                     }
-                } else {
-                    trace!(
-                        src = %self.peer_display_name(src_addr),
-                        "DataPacket decrypted (no TUN interface, plaintext dropped)"
-                    );
+                    _ => {
+                        debug!(
+                            src = %self.peer_display_name(src_addr),
+                            dst_port,
+                            "Unknown FSP service port, dropping DataPacket"
+                        );
+                    }
                 }
             }
             Some(SessionMessageType::SenderReport) => {
@@ -1118,10 +1150,16 @@ impl Node {
     /// Uses the FSP pipeline: builds a 12-byte cleartext header (used as AAD),
     /// prepends the 6-byte inner header to the plaintext, encrypts with AAD,
     /// optionally inserts cleartext coords, and wraps in a SessionDatagram.
+    ///
+    /// The `src_port` and `dst_port` identify the service. A 4-byte port header
+    /// `[src_port:2 LE][dst_port:2 LE]` is prepended to `payload` inside the
+    /// AEAD envelope. The receiver dispatches by `dst_port`.
     pub(in crate::node) async fn send_session_data(
         &mut self,
         dest_addr: &NodeAddr,
-        plaintext: &[u8],
+        src_port: u16,
+        dst_port: u16,
+        payload: &[u8],
     ) -> Result<(), NodeError> {
         let now_ms = Self::now_ms();
 
@@ -1140,10 +1178,16 @@ impl Node {
             });
         }
 
+        // Build port-prefixed plaintext: [src_port:2 LE][dst_port:2 LE][payload...]
+        let mut port_payload = Vec::with_capacity(FSP_PORT_HEADER_SIZE + payload.len());
+        port_payload.extend_from_slice(&src_port.to_le_bytes());
+        port_payload.extend_from_slice(&dst_port.to_le_bytes());
+        port_payload.extend_from_slice(payload);
+
         // Build inner plaintext (doesn't depend on counter)
         let msg_type = SessionMessageType::DataPacket.to_byte(); // 0x10
         let inner_flags = FspInnerFlags { spin_bit }.to_byte();
-        let inner_plaintext = fsp_prepend_inner_header(timestamp, msg_type, inner_flags, plaintext);
+        let inner_plaintext = fsp_prepend_inner_header(timestamp, msg_type, inner_flags, &port_payload);
 
         // Determine whether coords fit within transport MTU.
         // If not, send standalone CoordsWarmup before the data packet.
@@ -1151,7 +1195,7 @@ impl Node {
             let src = self.tree_state.my_coords().clone();
             let dst = self.get_dest_coords(dest_addr);
             let coords_size = coords_wire_size(&src) + coords_wire_size(&dst);
-            let total_wire = FIPS_OVERHEAD as usize + coords_size + plaintext.len();
+            let total_wire = FIPS_OVERHEAD as usize + FSP_PORT_HEADER_SIZE + coords_size + payload.len();
             if total_wire <= self.transport_mtu() as usize {
                 (true, Some(src), Some(dst))
             } else {
@@ -1226,7 +1270,7 @@ impl Node {
 
         // Re-borrow after send (which borrowed &mut self)
         if let Some(entry) = self.sessions.get_mut(dest_addr) {
-            entry.record_sent(plaintext.len());
+            entry.record_sent(payload.len());
             if let Some(mmp) = entry.mmp_mut() {
                 mmp.sender.record_sent(counter, timestamp, ciphertext.len());
             }
@@ -1234,6 +1278,24 @@ impl Node {
         }
 
         Ok(())
+    }
+
+    /// Send an IPv6 packet through the IPv6 shim (port 256) with header compression.
+    ///
+    /// Compresses the IPv6 header (format 0x00), then sends via `send_session_data`
+    /// with `src_port=256, dst_port=256`.
+    pub(in crate::node) async fn send_ipv6_packet(
+        &mut self,
+        dest_addr: &NodeAddr,
+        ipv6_packet: &[u8],
+    ) -> Result<(), NodeError> {
+        let compressed = crate::upper::ipv6_shim::compress_ipv6(ipv6_packet)
+            .ok_or_else(|| NodeError::SendFailed {
+                node_addr: *dest_addr,
+                reason: "IPv6 header compression failed".into(),
+            })?;
+        self.send_session_data(dest_addr, FSP_PORT_IPV6_SHIM, FSP_PORT_IPV6_SHIM, &compressed)
+            .await
     }
 
     /// Send a non-data session message (reports, notifications) over an established session.
@@ -1525,7 +1587,7 @@ impl Node {
                         return;
                     }
                 }
-                if let Err(e) = self.send_session_data(&dest_addr, &ipv6_packet).await {
+                if let Err(e) = self.send_ipv6_packet(&dest_addr, &ipv6_packet).await {
                     debug!(dest = %self.peer_display_name(&dest_addr), error = %e, "Failed to send TUN packet via session");
                 }
                 return;
@@ -1634,7 +1696,7 @@ impl Node {
             None => return,
         };
         for packet in packets {
-            if let Err(e) = self.send_session_data(dest_addr, &packet).await {
+            if let Err(e) = self.send_ipv6_packet(dest_addr, &packet).await {
                 debug!(dest = %self.peer_display_name(dest_addr), error = %e, "Failed to send queued TUN packet");
                 break;
             }

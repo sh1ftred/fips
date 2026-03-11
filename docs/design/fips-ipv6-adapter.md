@@ -146,35 +146,41 @@ wrapping.
 | FSP header | 12 bytes | 4-byte prefix + 8-byte counter (used as AEAD AAD) |
 | FSP inner header | 6 bytes | 4-byte timestamp + 1-byte msg_type + 1-byte inner_flags (inside AEAD) |
 | Session AEAD tag | 16 bytes | ChaCha20-Poly1305 tag on session-encrypted payload |
-| **Data path total** | **106 bytes** | `FIPS_OVERHEAD` constant |
+| **Protocol envelope** | **106 bytes** | `FIPS_OVERHEAD` constant |
+| Port header | 4 bytes | src_port + dst_port (DataPacket service dispatch) |
+| IPv6 compression | −33 bytes | 40-byte IPv6 header → 7-byte format + residual |
+| **IPv6 data path total** | **77 bytes** | `FIPS_IPV6_OVERHEAD` constant |
 
 Coordinate piggybacking (CP flag) adds variable overhead: `2 + entries × 16`
 per coordinate, with both src and dst coords sent. The send path skips the
 CP flag if adding coords would exceed the transport MTU.
 
-The `FIPS_OVERHEAD` constant (106 bytes) represents the fixed data path
-overhead and is used for MTU calculations.
+The `FIPS_OVERHEAD` constant (106 bytes) represents the base protocol
+envelope overhead (link encryption + routing + session encryption). For IPv6
+traffic, FSP port multiplexing adds 4 bytes (port header) while IPv6 header
+compression saves 33 bytes (40-byte header → 7-byte format + residual),
+yielding a net `FIPS_IPV6_OVERHEAD` of 77 bytes.
 
 ### Effective IPv6 MTU
 
 The effective IPv6 MTU visible to applications is:
 
 ```text
-effective_ipv6_mtu = transport_mtu - FIPS_OVERHEAD
+effective_ipv6_mtu = transport_mtu - FIPS_IPV6_OVERHEAD
 ```
 
 For typical deployments:
 
 | Transport MTU | Effective IPv6 MTU | Notes |
 | ------------- | ------------------ | ----- |
-| 1472 (UDP/Ethernet) | 1366 | Standard deployment |
-| 1280 (UDP minimum) | 1174 | Below IPv6 minimum |
+| 1472 (UDP/Ethernet) | 1395 | Standard deployment |
+| 1280 (UDP minimum) | 1203 | Below IPv6 minimum |
 
 IPv6 mandates that every link support at least 1280 bytes. The minimum
 transport path MTU for the IPv6 adapter is therefore:
 
 ```text
-1280 + 106 = 1386 bytes
+1280 + 77 = 1357 bytes
 ```
 
 Transports with smaller MTUs (radio at ~250 bytes, serial at 256 bytes) cannot
@@ -249,15 +255,18 @@ The TUN reader receives raw IPv6 packets from applications and processes them:
 3. Look up identity cache — miss returns ICMPv6 Destination Unreachable
 4. Retrieve NodeAddr and PublicKey from cache
 5. Look up or establish FSP session
-6. Encrypt payload with session keys
-7. Route through FMP toward destination
+6. Compress IPv6 header: strip addresses and payload length, build format 0x00
+   payload with residual fields (traffic class, flow label, next header, hop limit)
+7. Prepend port header (src_port=256, dst_port=256)
+8. Encrypt with session keys
+9. Route through FMP toward destination
 
 ### Writer Thread
 
 A single writer thread services an mpsc queue of outbound packets:
 
-- Inbound mesh traffic (decrypted session payloads destined for local
-  applications)
+- Inbound mesh traffic on port 256 (IPv6 header reconstructed from session
+  context + residual fields, then delivered as complete IPv6 packets)
 - ICMPv6 error responses (Packet Too Big, Destination Unreachable)
 - TCP MSS-clamped SYN-ACK packets
 
@@ -305,6 +314,8 @@ TUN device creation requires `CAP_NET_ADMIN`. Options:
 | ICMP rate limiting (per-source) | **Implemented** |
 | TCP MSS clamping (SYN + SYN-ACK) | **Implemented** |
 | DNS service (.fips domain) | **Implemented** |
+| Port-based service multiplexing (port 256) | **Implemented** |
+| IPv6 header compression (format 0x00) | **Implemented** |
 | Per-destination route MTU (netlink) | Planned |
 | Transit MTU error signal | **Implemented** |
 | Path MTU tracking (SessionDatagram field) | **Implemented** |

@@ -488,7 +488,7 @@ body.
 
 | Type | Message | Description |
 | ---- | ------- | ----------- |
-| 0x10 | Data | Application data (IPv6 payload via TUN) |
+| 0x10 | Data | Port-multiplexed service payload (see DataPacket below) |
 | 0x11 | SenderReport | MMP sender-side metrics report |
 | 0x12 | ReceiverReport | MMP receiver-side metrics report |
 | 0x13 | PathMtuNotification | End-to-end path MTU echo |
@@ -580,11 +580,64 @@ Encoded with FSP prefix: ver=0, phase=0x3, flags=0, payload_len.
 SessionMsg3 does not carry coordinates — both endpoints already have each
 other's coordinates from SessionSetup (msg1) and SessionAck (msg2).
 
-### Data (0x10)
+### Data (0x10) — DataPacket Port Multiplexing
 
-Application data (typically IPv6 payload). This is the `msg_type` byte
-inside the encrypted inner header — there is no separate DataPacket struct.
-The body after the inner header is delivered directly to the TUN interface.
+DataPacket is the primary application data carrier. The body after the
+6-byte encrypted inner header contains a 4-byte port header followed by
+the service payload:
+
+| Offset | Field | Size | Description |
+| ------ | ----- | ---- | ----------- |
+| 0 | src_port | 2 bytes LE | Source service port |
+| 2 | dst_port | 2 bytes LE | Destination service port |
+| 4 | payload | variable | Service-specific payload |
+
+The receiver dispatches by `dst_port` to the registered service handler.
+
+**Port registry (three tiers):**
+
+| Range | Purpose |
+| ----- | ------- |
+| 0–255 (0x00–0xFF) | Reserved, protocol use |
+| 256–1023 (0x100–0x3FF) | Reserved, FIPS standard services |
+| 1024–65535 (0x400–0xFFFF) | Application use |
+
+**Initial assignment**: Port 256 (0x100) = IPv6 shim.
+
+#### IPv6 Shim Payload Format (Port 256)
+
+The IPv6 shim defines its own payload format with a leading format byte:
+
+| Offset | Field | Size | Description |
+| ------ | ----- | ---- | ----------- |
+| 0 | format | 1 byte | Compression format (0x00 = mesh-internal compressed) |
+| 1 | fields | variable | Format-specific residual fields |
+
+**Format 0x00 — mesh-internal compressed (default):**
+
+Strips source and destination IPv6 addresses (32 bytes) and payload length
+(2 bytes) from each packet. Carries residual fields that cannot be derived
+from session context:
+
+| Offset | Field | Size | Description |
+| ------ | ----- | ---- | ----------- |
+| 0 | format | 1 byte | 0x00 |
+| 1 | traffic_class | 1 byte | IPv6 Traffic Class (DSCP + ECN) |
+| 2 | flow_label | 3 bytes | IPv6 Flow Label (20 bits, big-endian, zero-padded) |
+| 5 | next_header | 1 byte | IPv6 Next Header (protocol identifier) |
+| 6 | hop_limit | 1 byte | IPv6 Hop Limit |
+| 7 | upper_payload | variable | Upper-layer payload (TCP, UDP, ICMPv6, etc.) |
+
+The receiver reconstructs the full 40-byte IPv6 header from session context
+(source and destination addresses derived from session npubs, version = 6,
+payload length from outer packet length) plus the 6 bytes of residual fields,
+then delivers the complete IPv6 packet to the TUN interface.
+
+**Format 0x01+**: Reserved for future use (e.g., full-header gateway traffic).
+
+**Compression savings**: 29 bytes per packet (34 bytes stripped, 7 bytes
+format + residual added). Net overhead for IPv6 traffic: 77 bytes
+(`FIPS_IPV6_OVERHEAD`), down from 110 bytes base DataPacket overhead.
 
 ### PathMtuNotification (0x13)
 
@@ -695,27 +748,38 @@ A complete picture of how application data is wrapped through each layer.
 
 ### Application Data -> Wire
 
-Starting with an application sending a 1024-byte payload to a destination:
+Starting with an IPv6 application sending a 1024-byte TCP payload to a
+destination (the original IPv6 packet at the TUN is 1064 bytes: 40-byte
+header + 1024-byte payload):
 
 ```text
-Layer 4: Application data
-    1024 bytes
+Layer 5: Application data
+    1024 bytes (TCP payload inside 1064-byte IPv6 packet)
+
+Layer 4: IPv6 shim compression (port 256)
+    Strip IPv6 addresses (32) + payload length (2), keep residual fields
+    format (1) + residual (6) + upper payload (1024) = 1031 bytes
 
 Layer 3: Session encryption (FSP)
-    FSP header (12 bytes) + AEAD(inner_hdr (6) + payload (1024)) + AEAD tag (16)
-    = 1058 bytes
+    FSP header (12) + AEAD(inner_hdr (6) + port_hdr (4) + shim (1031)) + tag (16)
+    = 12 + 1041 + 16 = 1069 bytes
 
 Layer 2: SessionDatagram envelope (FMP routing)
-    msg_type (1) + ttl (1) + path_mtu (2) + src_addr (16) + dest_addr (16) + payload (1058)
-    = 1094 bytes
+    msg_type (1) + ttl (1) + path_mtu (2) + src_addr (16) + dest_addr (16) + payload (1069)
+    = 1105 bytes
 
 Layer 1: Link encryption (FMP per-hop)
-    outer header (16) + encrypted(inner_hdr (5) + datagram (1094)) + AEAD tag (16)
-    = 1131 bytes
+    outer header (16) + encrypted(inner_hdr (5) + datagram (1105)) + AEAD tag (16)
+    = 1142 bytes
 
 Layer 0: Transport
-    UDP datagram containing 1131 bytes
+    UDP datagram containing 1142 bytes
 ```
+
+Total overhead for IPv6 traffic: 1142 − 1064 = 78 bytes per packet. The
+difference from the `FIPS_IPV6_OVERHEAD` constant (77 bytes) is the 1-byte
+FMP `msg_type` counted in the link inner header rather than the
+SessionDatagram body.
 
 ### Overhead Budget
 
@@ -726,7 +790,11 @@ Layer 0: Transport
 | FSP header | 12 bytes | 4 prefix + 8 counter |
 | FSP inner header | 6 bytes | 4 timestamp + 1 msg_type + 1 inner_flags (inside AEAD) |
 | Session AEAD tag | 16 bytes | Poly1305 tag on session-encrypted payload |
-| **Data path total** | **106 bytes** | `FIPS_OVERHEAD` constant |
+| **Protocol envelope** | **106 bytes** | `FIPS_OVERHEAD` constant |
+| Port header | 4 bytes | src_port + dst_port (DataPacket only) |
+| **DataPacket total** | **110 bytes** | Base overhead for any port-multiplexed service |
+| IPv6 compression | −33 bytes | 40-byte IPv6 header → 7-byte format + residual |
+| **IPv6 data path total** | **77 bytes** | `FIPS_IPV6_OVERHEAD` constant |
 
 ### At Each Transit Node
 
@@ -784,8 +852,8 @@ endpoint session keys).
 | SessionSetup | ~170 bytes | Depth-dependent (XK msg1 = 33 bytes) |
 | SessionAck | ~190 bytes | Depth-dependent, carries both endpoints' coords (XK msg2 = 57 bytes) |
 | SessionMsg3 | ~80 bytes | Fixed (XK msg3 = 73 bytes, no coords) |
-| Data (minimal) | 12 + 6 + payload + 16 bytes | Steady state |
-| Data (with coords) | 12 + ~130 + 6 + payload + 16 bytes | Warmup/recovery |
+| Data (minimal) | 12 + 6 + 4 + payload + 16 bytes | Steady state (port header included) |
+| Data (with coords) | 12 + ~130 + 6 + 4 + payload + 16 bytes | Warmup/recovery (port header included) |
 | SenderReport | 12 + 6 + 46 + 16 bytes | MMP metrics |
 | ReceiverReport | 12 + 6 + 66 + 16 bytes | MMP metrics |
 | PathMtuNotification | 12 + 6 + 2 + 16 bytes | MTU signal |
@@ -799,8 +867,9 @@ endpoint session keys).
 | Scenario | Wire Size | Notes |
 | -------- | --------- | ----- |
 | Encrypted frame minimum | 37 bytes | Empty body |
-| SessionDatagram + Data (minimal) | 37 + 35 + 12 + 6 + payload + 16 | 106 + payload |
-| SessionDatagram + Data (with coords) | 106 + coords + payload | Coords vary with tree depth |
+| SessionDatagram + Data (minimal) | 37 + 35 + 12 + 6 + 4 + payload + 16 | 110 + payload (any service) |
+| SessionDatagram + IPv6 Data (minimal) | 110 + 7 + upper_payload − 34 | 77 + IPv6 payload (compressed) |
+| SessionDatagram + Data (with coords) | 110 + coords + payload | Coords vary with tree depth |
 | SessionDatagram + SessionSetup | ~275 bytes | Depth-3, both dirs |
 | SessionDatagram + CoordsRequired | 37 + 36 + 38 = 111 bytes | Including link overhead |
 

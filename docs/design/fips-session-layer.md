@@ -45,6 +45,15 @@ arriving at the TUN are translated to FIPS datagrams and routed through FSP.
 See [fips-ipv6-adapter.md](fips-ipv6-adapter.md) for the IPv6 adaptation
 layer.
 
+### Port-Based Service Dispatch
+
+FSP DataPackets carry a 4-byte port header (source and destination port) inside
+the AEAD envelope, enabling multiple services to share a single session. The
+IPv6 adapter runs on port 256; the native FIPS API and future services
+(gateways, application protocols) register on other ports. Port dispatch is
+internal to the FSP layer — services see only their payload, not the port
+header.
+
 ### What Applications Get
 
 - **Authenticated datagram delivery**: Each datagram is encrypted and
@@ -174,7 +183,9 @@ encrypted message includes:
   flags (including the CP flag for coordinate cache warming)
 - Optional cleartext coordinates when the CP flag is set
 - An AEAD-encrypted payload containing a 6-byte inner header (session-relative
-  timestamp, message type, inner flags) followed by the application data
+  timestamp, message type, inner flags) followed by DataPacket content: a 4-byte
+  port header (src_port, dst_port) and the service payload. The receiver
+  dispatches by destination port to the registered service handler.
 
 ### Session Idle Timeout
 
@@ -539,6 +550,8 @@ MMP session metrics session=npub1tdwa...84le rtt=4.3ms loss=0.6% jitter=0.2ms go
 | Simultaneous initiation tie-breaker | **Implemented** |
 | Flush coord cache on parent change | **Implemented** |
 | Rekey | **Implemented** |
+| Port-based service multiplexing | **Implemented** |
+| IPv6 header compression (shim on port 256) | **Implemented** |
 | Path MTU tracking (FMP SessionDatagram field) | **Implemented** |
 | Path MTU notification (end-to-end echo) | **Implemented** |
 

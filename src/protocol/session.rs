@@ -26,7 +26,8 @@ pub enum SessionMessageType {
     SessionAck = 0x01,
 
     // Data and metrics (0x10-0x1F) — encrypted, inner header msg_type
-    /// Encrypted IPv6 datagram payload (TUN delivery).
+    /// Port-multiplexed service payload: `[src_port:2 LE][dst_port:2 LE][service data...]`.
+    /// Port 256 = IPv6 shim (compressed header). Receiver dispatches by dst_port.
     DataPacket = 0x10,
     /// MMP sender report (metrics from sender to receiver).
     SenderReport = 0x11,

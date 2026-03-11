@@ -11,6 +11,17 @@
 //! [ver+phase:1][flags:1][payload_len:2 LE]
 //! ```
 //!
+//! ## DataPacket Port Multiplexing
+//!
+//! DataPacket (msg_type 0x10) payloads inside the AEAD envelope carry a 4-byte
+//! port header for service dispatch:
+//!
+//! ```text
+//! [src_port:2 LE][dst_port:2 LE][service payload...]
+//! ```
+//!
+//! Port 256 (0x100) = IPv6 shim with header compression.
+//!
 //! ## Message Classes
 //!
 //! | Phase | U Flag | Type             | Description                       |
@@ -57,6 +68,14 @@ const TAG_SIZE: usize = 16;
 
 /// Minimum size for an encrypted FSP message: header + tag (no plaintext).
 pub const FSP_ENCRYPTED_MIN_SIZE: usize = FSP_HEADER_SIZE + TAG_SIZE; // 28 bytes
+
+// FSP DataPacket port header constants.
+
+/// Size of the FSP DataPacket port header (src_port + dst_port).
+pub const FSP_PORT_HEADER_SIZE: usize = 4;
+
+/// FSP port: IPv6 shim service.
+pub const FSP_PORT_IPV6_SHIM: u16 = 256;
 
 // Cleartext flag bit constants (byte 1 of common prefix, phase 0x0 only).
 
