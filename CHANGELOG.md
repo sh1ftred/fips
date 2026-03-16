@@ -32,6 +32,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     and truncated onion address in table view
   - Bootstrap milestone logging (25/50/75/100%), stall warning, network
     liveness transitions, dormant mode alerts
+- Non-blocking transport connect for connection-oriented transports (TCP,
+  Tor) — connection establishment no longer stalls the RX event loop
+- Pre-seed identity cache from configured peer npubs at startup, so TUN
+  packets can be dispatched immediately without waiting for handshake
+  completion
+
+### Fixed
+
+- DNS responder returned NXDOMAIN for A queries on valid `.fips` names,
+  causing resolvers to give up without trying AAAA. Now returns NOERROR
+  with empty answers for non-AAAA queries on resolvable names. (#9)
+- Stale end-to-end session left in session table after peer removal blocked
+  session re-establishment on reconnect — `remove_active_peer` now cleans
+  up `self.sessions` and `self.pending_tun_packets`. (#5)
+- `schedule_reconnect` reset exponential backoff to zero on each link-dead
+  cycle instead of preserving accumulated retry count. (#5)
+- FMP/FSP rekey dual-initiation race on high-latency links (Tor): both
+  sides' timers fired simultaneously, both msg1s crossed in flight, each
+  side's responder path destroyed the initiator state. Fixed with
+  deterministic tie-breaker (smaller NodeAddr wins as initiator).
+- Parent selection SRTT gate bypass: `evaluate_parent` used default cost
+  1.0 for peers filtered out by `has_srtt()`, defeating the MMP eligibility
+  gate. Now skips unmeasured candidates when any peer has cost data.
+- FSP rekey cutover race: initiator cut over before responder received msg3,
+  causing AEAD failures. Fixed by deferring initiator cutover by 2 seconds.
+- MMP metric discontinuity after rekey: receiver state carried stale
+  counters across rekey, inflating reorder counts and jitter. Fixed via
+  `reset_for_rekey()`.
+- Auto-connect peers exhausted `max_retries` on initial connection failures
+  and were permanently abandoned. Now retry indefinitely with exponential
+  backoff capped at 300 seconds.
+- Control socket permissions: non-root users couldn't connect. Daemon now
+  chowns socket and directory to `root:fips` group at bind time.
 
 ## [0.1.0] - 2026-03-12
 
