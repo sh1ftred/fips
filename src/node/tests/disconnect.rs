@@ -256,7 +256,7 @@ async fn test_disconnect_clears_session() {
     // to simulate the state after a completed XK handshake with node 0.
     let remote_identity = Identity::generate();
     {
-        let our_identity = nodes[1].node.identity().clone();
+        let our_identity = nodes[1].node.identity();
 
         let mut initiator = HandshakeState::new_initiator(
             our_identity.keypair(),

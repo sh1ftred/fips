@@ -57,6 +57,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   produced 2,000–7,000ms jitter spikes that corrupted the EWMA estimator.
   Added a 15-second grace period after rekey cutover that suppresses jitter
   updates until drain-window frames have flushed. (#10)
+- ICMPv6 Packet Too Big source was set to the local FIPS address, which
+  Linux ignores (loopback PTB check). Now uses the original packet's
+  destination so the kernel honors the PMTU update.
+  (#16, [@v0l](https://github.com/v0l))
+- Reverse delivery ratio used lifetime cumulative counters instead of
+  per-interval deltas, making ETX unresponsive to recent loss. (#14)
+- MMP delta guards used `prev_rr > 0` to detect first report, conflating
+  it with a legitimate zero counter. Replaced with `has_prev_rr`. (#14)
 
 ## [0.1.0] - 2026-03-12
 
