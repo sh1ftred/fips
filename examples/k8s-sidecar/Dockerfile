@@ -54,7 +54,7 @@ RUN printf '%s\n' \
 COPY --from=builder /build/target/release/fips    /usr/local/bin/fips
 COPY --from=builder /build/target/release/fipsctl /usr/local/bin/fipsctl
 
-COPY testing/k8s/entrypoint.sh /entrypoint.sh
+COPY examples/k8s-sidecar/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

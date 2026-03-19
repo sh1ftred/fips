@@ -19,7 +19,7 @@ done
 
 if [ ! -f "$PROJECT_ROOT/Cargo.toml" ]; then
     echo "Error: Cannot find Cargo.toml at $PROJECT_ROOT" >&2
-    echo "Expected layout: <project-root>/testing/k8s/scripts/build.sh" >&2
+    echo "Expected layout: <project-root>/examples/k8s-sidecar/scripts/build.sh" >&2
     exit 1
 fi
 
@@ -34,4 +34,4 @@ echo ""
 echo "Done. Image: $IMAGE_TAG"
 echo ""
 echo "Push to your registry, then apply the example manifest:"
-echo "  kubectl apply -f testing/k8s/pod.yaml"
+echo "  kubectl apply -f examples/k8s-sidecar/pod.yaml"

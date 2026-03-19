@@ -10,7 +10,7 @@ configuration.
 
 ```bash
 # 1. Build the sidecar image
-cd testing/k8s
+cd examples/k8s-sidecar
 ./scripts/build.sh --tag fips-k8s-sidecar:latest
 
 # 2. Push to your registry (replace with your own)
