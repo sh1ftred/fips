@@ -3,15 +3,13 @@
 ![banner](docs/logos/fips_banner.png)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.85%2B-orange.svg)](https://www.rust-lang.org/)
-[![Status](https://img.shields.io/badge/status-alpha%20(0.1.0)-yellow.svg)](#status--roadmap)
+[![Status](https://img.shields.io/badge/status-v0.2.0-green.svg)](#status--roadmap)
 
 A distributed, decentralized network routing protocol for mesh nodes
 connecting over arbitrary transports.
 
-> **Status: Alpha (0.1.0)**
->
-> FIPS is under active development. The protocol and APIs are not stable.
-> Expect breaking changes. See [Status & Roadmap](#status--roadmap) below.
+> FIPS is under active development. The protocol and APIs are not yet stable.
+> See [Status & Roadmap](#status--roadmap) below.
 
 ## Overview
 
@@ -38,22 +36,22 @@ endpoints.
 
 ## Features
 
-- **Self-organizing mesh routing** — spanning tree coordinates and bloom
-  filter candidate selection, no global routing tables
-- **Multi-transport** — UDP, TCP, and Ethernet today; designed for
-  Bluetooth, serial, radio, and Tor
-- **Noise encryption** — hop-by-hop link encryption plus independent
-  end-to-end session encryption, with periodic rekey for forward secrecy
+- **Self-organizing mesh routing** — spanning tree coordinates with bloom
+  filter guided discovery, no global routing tables
+- **Multi-transport** — UDP, TCP, Ethernet, and Tor today; designed for
+  Bluetooth, serial, and radio
+- **Noise encryption** — hop-by-hop link encryption (IK) plus independent
+  end-to-end session encryption (XK), with periodic rekey for forward secrecy
 - **Nostr-native identity** — secp256k1 keypairs as node addresses, no
   registration or central authority
 - **IPv6 adaptation** — TUN interface maps npubs to fd00::/8 addresses for
   unmodified IP applications; static hostname mapping (`/etc/fips/hosts`)
 - **Metrics Measurement Protocol** — per-link RTT, loss, jitter, and goodput
-  measurement
+  measurement with mesh size estimation
 - **ECN congestion signaling** — hop-by-hop CE flag relay with RFC 3168 IPv6
   marking, transport kernel drop detection
 - **Operator visibility** — `fipsctl` CLI and `fipstop` TUI dashboard for
-  runtime inspection of peers, links, sessions, tree state, and metrics
+  runtime inspection and runtime peer management
 - **Zero configuration** — sensible defaults; a node can start with no config
   file, though peer addresses are needed to join a network
 
@@ -232,7 +230,7 @@ a layered protocol specification. Start with
 
 ## Project Structure
 
-```
+```text
 src/          Rust source (library + fips/fipsctl/fipstop binaries)
 packaging/    Debian, systemd tarball, and shared packaging files
 docs/design/  Protocol design specifications
@@ -241,29 +239,31 @@ testing/      Docker-based integration test harnesses
 
 ## Status & Roadmap
 
-FIPS is at **v0.1.0 (alpha)**. The core protocol works end-to-end over
-UDP, TCP, Ethernet, and Tor but has not been tested beyond small meshes.
+FIPS is at **v0.2.0**. The core protocol works end-to-end over UDP, TCP,
+Ethernet, and Tor with a small live mesh of deployed nodes.
 
 ### What works today
 
 - Spanning tree construction with greedy coordinate routing
-- Bloom filter discovery for finding nodes without global state
+- Bloom filter guided discovery (no flooding, single-path with retry)
 - Noise IK (link layer) and Noise XK (session layer) encryption
-- Periodic Noise rekey with forward secrecy (FMP + FSP)
+- Periodic Noise rekey with hitless cutover for forward secrecy (FMP + FSP)
 - Persistent node identity with key file management
 - IPv6 TUN adapter with DNS resolution of `.fips` names
 - Static hostname mapping (`/etc/fips/hosts`) with auto-reload
 - Per-link metrics (RTT, loss, jitter, goodput) and mesh size estimation
 - ECN congestion signaling (hop-by-hop CE relay, IPv6 CE marking, kernel drop detection)
 - UDP, TCP, Ethernet, and Tor transports (SOCKS5 outbound + directory-mode onion service inbound)
-- Runtime inspection via `fipsctl` and `fipstop`
+- Runtime inspection and peer management via `fipsctl` and `fipstop`
+- Reproducible builds with toolchain pinning and SOURCE_DATE_EPOCH
+- Debian and systemd tarball packaging
 - Docker-based integration and chaos testing
 
 ### Near-term priorities
 
 - Peer discovery via Nostr relays (bootstrap without static peer lists)
+- Native API for FIPS-aware applications (npub:port addressing)
 - Additional transports (Bluetooth)
-- Improved routing resilience under churn
 - Security audit of cryptographic protocols
 
 ### Longer-term
