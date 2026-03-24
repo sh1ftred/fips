@@ -499,6 +499,153 @@ impl TorConfig {
 }
 
 // ============================================================================
+// BLE Transport Configuration
+// ============================================================================
+
+/// Default BLE L2CAP PSM (dynamic range).
+const DEFAULT_BLE_PSM: u16 = 0x0085;
+
+/// Default BLE MTU for L2CAP CoC connections.
+const DEFAULT_BLE_MTU: u16 = 2048;
+
+/// Default maximum concurrent BLE connections.
+const DEFAULT_BLE_MAX_CONNECTIONS: usize = 7;
+
+/// Default BLE connect timeout in milliseconds.
+const DEFAULT_BLE_CONNECT_TIMEOUT_MS: u64 = 10_000;
+
+/// Default BLE scan interval in seconds.
+const DEFAULT_BLE_SCAN_INTERVAL_SECS: u64 = 10;
+
+/// Default BLE beacon interval in seconds.
+const DEFAULT_BLE_BEACON_INTERVAL_SECS: u64 = 30;
+
+/// Default BLE beacon duration in seconds (how long each burst lasts).
+const DEFAULT_BLE_BEACON_DURATION_SECS: u64 = 1;
+
+/// BLE transport instance configuration.
+///
+/// BleConfig is always compiled (for config parsing on any platform),
+/// but the transport runtime requires Linux and the `ble` feature.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BleConfig {
+    /// HCI adapter name (e.g., "hci0"). Required.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adapter: Option<String>,
+
+    /// L2CAP PSM for FIPS connections. Default: 0x0085 (133).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub psm: Option<u16>,
+
+    /// Default MTU for BLE connections. Default: 2048.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mtu: Option<u16>,
+
+    /// Maximum concurrent BLE connections. Default: 7.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_connections: Option<usize>,
+
+    /// Outbound connect timeout in milliseconds. Default: 10000.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub connect_timeout_ms: Option<u64>,
+
+    /// Broadcast BLE advertisements. Default: true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub advertise: Option<bool>,
+
+    /// Listen for BLE advertisements. Default: true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scan: Option<bool>,
+
+    /// Auto-connect to discovered BLE peers. Default: false.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_connect: Option<bool>,
+
+    /// Accept incoming BLE connections. Default: true.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub accept_connections: Option<bool>,
+
+    /// Scan interval in seconds. Default: 10.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scan_interval_secs: Option<u64>,
+
+    /// Beacon interval in seconds between advertising bursts. Default: 10.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beacon_interval_secs: Option<u64>,
+
+    /// Beacon duration in seconds per advertising burst. Default: 3.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beacon_duration_secs: Option<u64>,
+}
+
+impl BleConfig {
+    /// Get the adapter name. Default: "hci0".
+    pub fn adapter(&self) -> &str {
+        self.adapter.as_deref().unwrap_or("hci0")
+    }
+
+    /// Get the L2CAP PSM. Default: 0x0085.
+    pub fn psm(&self) -> u16 {
+        self.psm.unwrap_or(DEFAULT_BLE_PSM)
+    }
+
+    /// Get the default MTU. Default: 2048.
+    pub fn mtu(&self) -> u16 {
+        self.mtu.unwrap_or(DEFAULT_BLE_MTU)
+    }
+
+    /// Get the maximum concurrent connections. Default: 7.
+    pub fn max_connections(&self) -> usize {
+        self.max_connections.unwrap_or(DEFAULT_BLE_MAX_CONNECTIONS)
+    }
+
+    /// Get the connect timeout in milliseconds. Default: 10000.
+    pub fn connect_timeout_ms(&self) -> u64 {
+        self.connect_timeout_ms
+            .unwrap_or(DEFAULT_BLE_CONNECT_TIMEOUT_MS)
+    }
+
+    /// Whether to broadcast advertisements. Default: true.
+    pub fn advertise(&self) -> bool {
+        self.advertise.unwrap_or(true)
+    }
+
+    /// Whether to scan for advertisements. Default: true.
+    pub fn scan(&self) -> bool {
+        self.scan.unwrap_or(true)
+    }
+
+    /// Whether to auto-connect to discovered peers. Default: false.
+    pub fn auto_connect(&self) -> bool {
+        self.auto_connect.unwrap_or(false)
+    }
+
+    /// Whether to accept incoming connections. Default: true.
+    pub fn accept_connections(&self) -> bool {
+        self.accept_connections.unwrap_or(true)
+    }
+
+    /// Get the scan interval in seconds. Default: 10.
+    pub fn scan_interval_secs(&self) -> u64 {
+        self.scan_interval_secs
+            .unwrap_or(DEFAULT_BLE_SCAN_INTERVAL_SECS)
+    }
+
+    /// Get the beacon interval in seconds. Default: 10.
+    pub fn beacon_interval_secs(&self) -> u64 {
+        self.beacon_interval_secs
+            .unwrap_or(DEFAULT_BLE_BEACON_INTERVAL_SECS)
+    }
+
+    /// Get the beacon duration in seconds. Default: 3.
+    pub fn beacon_duration_secs(&self) -> u64 {
+        self.beacon_duration_secs
+            .unwrap_or(DEFAULT_BLE_BEACON_DURATION_SECS)
+    }
+}
+
+// ============================================================================
 // TransportsConfig
 // ============================================================================
 
@@ -523,6 +670,10 @@ pub struct TransportsConfig {
     /// Tor transport instances.
     #[serde(default, skip_serializing_if = "is_transport_empty")]
     pub tor: TransportInstances<TorConfig>,
+
+    /// BLE transport instances.
+    #[serde(default, skip_serializing_if = "is_transport_empty")]
+    pub ble: TransportInstances<BleConfig>,
 }
 
 /// Helper for skip_serializing_if on TransportInstances.
@@ -533,7 +684,11 @@ fn is_transport_empty<T>(instances: &TransportInstances<T>) -> bool {
 impl TransportsConfig {
     /// Check if any transports are configured.
     pub fn is_empty(&self) -> bool {
-        self.udp.is_empty() && self.ethernet.is_empty() && self.tcp.is_empty() && self.tor.is_empty()
+        self.udp.is_empty()
+            && self.ethernet.is_empty()
+            && self.tcp.is_empty()
+            && self.tor.is_empty()
+            && self.ble.is_empty()
     }
 
     /// Merge another TransportsConfig into this one.
@@ -551,6 +706,9 @@ impl TransportsConfig {
         }
         if !other.tor.is_empty() {
             self.tor = other.tor;
+        }
+        if !other.ble.is_empty() {
+            self.ble = other.ble;
         }
     }
 }

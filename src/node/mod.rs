@@ -675,7 +675,7 @@ impl Node {
     /// Create transport instances from configuration.
     ///
     /// Returns a vector of TransportHandles for all configured transports.
-    fn create_transports(&mut self, packet_tx: &PacketTx) -> Vec<TransportHandle> {
+    async fn create_transports(&mut self, packet_tx: &PacketTx) -> Vec<TransportHandle> {
         let mut transports = Vec::new();
 
         // Collect UDP configs with optional names to avoid borrow conflicts
@@ -744,6 +744,47 @@ impl Node {
             transports.push(TransportHandle::Tor(tor));
         }
 
+        // Create BLE transport instances
+        #[cfg(target_os = "linux")]
+        {
+            let ble_instances: Vec<_> = self
+                .config
+                .transports
+                .ble
+                .iter()
+                .map(|(name, config)| (name.map(|s| s.to_string()), config.clone()))
+                .collect();
+
+            #[cfg(all(feature = "ble", not(test)))]
+            for (name, ble_config) in ble_instances {
+                let transport_id = self.allocate_transport_id();
+                let adapter = ble_config.adapter().to_string();
+                let mtu = ble_config.mtu();
+                match crate::transport::ble::io::BluerIo::new(&adapter, mtu).await {
+                    Ok(io) => {
+                        let mut ble = crate::transport::ble::BleTransport::new(
+                            transport_id,
+                            name,
+                            ble_config,
+                            io,
+                            packet_tx.clone(),
+                        );
+                        ble.set_local_pubkey(self.identity.pubkey().serialize());
+                        transports.push(TransportHandle::Ble(ble));
+                    }
+                    Err(e) => {
+                        tracing::warn!(adapter = %adapter, error = %e, "failed to initialize BLE adapter");
+                    }
+                }
+            }
+
+            #[cfg(any(not(feature = "ble"), test))]
+            if !ble_instances.is_empty() {
+                #[cfg(not(test))]
+                tracing::warn!("BLE transport configured but 'ble' feature not enabled at compile time");
+            }
+        }
+
         transports
     }
 
@@ -804,6 +845,46 @@ impl Node {
         };
 
         Ok((transport_id, TransportAddr::from_bytes(&mac)))
+    }
+
+    /// Resolve a BLE address string (`"adapter/AA:BB:CC:DD:EE:FF"`) to a
+    /// (TransportId, TransportAddr) pair by finding the BLE transport
+    /// instance matching the adapter name.
+    #[cfg(target_os = "linux")]
+    fn resolve_ble_addr(
+        &self,
+        addr_str: &str,
+    ) -> Result<(TransportId, TransportAddr), NodeError> {
+        let ta = TransportAddr::from_string(addr_str);
+        let adapter = crate::transport::ble::addr::adapter_from_addr(&ta)
+            .ok_or_else(|| {
+            NodeError::NoTransportForType(format!(
+                "invalid BLE address format '{}': expected 'adapter/mac'",
+                addr_str
+            ))
+        })?;
+
+        // Find the BLE transport for this adapter
+        let transport_id = self
+            .transports
+            .iter()
+            .find(|(_, handle)| {
+                handle.transport_type().name == "ble" && handle.is_operational()
+            })
+            .map(|(id, _)| *id)
+            .ok_or_else(|| {
+                NodeError::NoTransportForType(format!(
+                    "no operational BLE transport for adapter '{}'",
+                    adapter
+                ))
+            })?;
+
+        // Validate the address format
+        crate::transport::ble::addr::BleAddr::parse(addr_str).map_err(|e| {
+            NodeError::NoTransportForType(format!("invalid BLE address '{}': {}", addr_str, e))
+        })?;
+
+        Ok((transport_id, TransportAddr::from_string(addr_str)))
     }
 
     // === Identity Accessors ===

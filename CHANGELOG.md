@@ -16,6 +16,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#21](https://github.com/jmcorgan/fips/pull/21),
   [@dskvr](https://github.com/dskvr))
 
+#### Bluetooth Transport
+
+- Bluetooth Low Energy (BLE) L2CAP Connection-Oriented Channel transport
+  with per-link MTU negotiation, behind the `ble` Cargo feature flag
+  (default-on, Linux only, requires BlueZ)
+- BLE peer discovery via scan/probe with per-entry random jitter to
+  prevent herd effects when multiple nodes see the same beacon
+- Periodic BLE beacon advertising with configurable interval and duration
+- Cross-probe tie-breaker using deterministic NodeAddr comparison
+- Connection pool with configurable capacity and eviction
+
 ### Fixed
 
 - Control socket path detection in fipsctl and fipstop now checks for

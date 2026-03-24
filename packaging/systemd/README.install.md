@@ -62,7 +62,32 @@ transports:
     accept_connections: true
 ```
 
-### 3. Static Peers
+### 3. Bluetooth Transport
+
+If using BLE for local mesh discovery, the FIPS binary must be built with
+the `ble` feature (enabled by default). BlueZ must be installed and running:
+
+```bash
+sudo apt install bluez
+sudo systemctl enable --now bluetooth
+```
+
+Add your service user to the `bluetooth` group, or run with
+`CAP_NET_ADMIN` + `CAP_NET_RAW` capabilities.
+
+Configure BLE in the transports section:
+
+```yaml
+transports:
+  ble:
+    adapter: "hci0"
+    advertise: true
+    scan: true
+    auto_connect: true
+    accept_connections: true
+```
+
+### 4. Static Peers
 
 For bootstrapping over UDP or TCP, add known peers:
 
@@ -76,7 +101,7 @@ peers:
     connect_policy: auto_connect
 ```
 
-### 4. DNS Resolver (optional, requires systemd-resolved)
+### 5. DNS Resolver (optional, requires systemd-resolved)
 
 FIPS includes a DNS responder for `.fips` domain names (port 5354).
 On systems running `systemd-resolved`, the installer automatically enables

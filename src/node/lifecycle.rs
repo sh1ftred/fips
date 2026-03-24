@@ -118,6 +118,30 @@ impl Node {
                         continue;
                     }
                 }
+            } else if addr.transport == "ble" {
+                #[cfg(target_os = "linux")]
+                {
+                    match self.resolve_ble_addr(&addr.addr) {
+                        Ok(result) => result,
+                        Err(e) => {
+                            debug!(
+                                transport = %addr.transport,
+                                addr = %addr.addr,
+                                error = %e,
+                                "Failed to resolve BLE address"
+                            );
+                            continue;
+                        }
+                    }
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    debug!(
+                        transport = %addr.transport,
+                        "BLE transport not available on this platform"
+                    );
+                    continue;
+                }
             } else {
                 // Find a transport matching this address type
                 let tid = match self.find_transport_for_type(&addr.transport) {
@@ -513,7 +537,7 @@ impl Node {
         self.packet_rx = Some(packet_rx);
 
         // Initialize transports first (before TUN)
-        let transport_handles = self.create_transports(&packet_tx);
+        let transport_handles = self.create_transports(&packet_tx).await;
 
         for mut handle in transport_handles {
             let transport_id = handle.transport_id();

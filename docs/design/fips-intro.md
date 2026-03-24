@@ -524,9 +524,10 @@ forwarding, a publicly addressed peer, or relay through other mesh nodes.
 UDP hole punching and relay-assisted NAT traversal are potential future
 mechanisms but are not part of the current design.
 
-> **Implementation status**: UDP/IP, TCP/IP, Ethernet, and Tor
-> (SOCKS5 outbound + directory-mode inbound via onion service)
-> transports are implemented. All others are future directions.
+> **Implementation status**: UDP/IP, TCP/IP, Ethernet, Tor
+> (SOCKS5 outbound + directory-mode inbound via onion service),
+> and Bluetooth (BLE L2CAP CoC) transports are implemented.
+> All others are future directions.
 
 See [fips-transport-layer.md](fips-transport-layer.md) for the full transport
 layer specification.

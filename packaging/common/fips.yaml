@@ -37,6 +37,15 @@ transports:
   #   auto_connect: true
   #   accept_connections: true
 
+  # Bluetooth Low Energy transport — requires BlueZ and the 'ble' feature.
+  # ble:
+  #   adapter: "hci0"
+  #   mtu: 2048
+  #   advertise: true
+  #   scan: true
+  #   auto_connect: true
+  #   accept_connections: true
+
 peers: []
   # Static peers for bootstrapping (UDP or TCP):
   # - npub: "npub1..."

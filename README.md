@@ -38,8 +38,8 @@ endpoints.
 
 - **Self-organizing mesh routing** — spanning tree coordinates with bloom
   filter guided discovery, no global routing tables
-- **Multi-transport** — UDP, TCP, Ethernet, and Tor today; designed for
-  Bluetooth, serial, and radio
+- **Multi-transport** — UDP, TCP, Ethernet, Tor, and Bluetooth (BLE L2CAP)
+  today; designed for serial and radio
 - **Noise encryption** — hop-by-hop link encryption (IK) plus independent
   end-to-end session encryption (XK), with periodic rekey for forward secrecy
 - **Nostr-native identity** — secp256k1 keypairs as node addresses, no
@@ -64,6 +64,10 @@ cargo build --release
 ```
 
 Requires Rust 1.85+ (edition 2024) and Linux with TUN support.
+
+The BLE transport (enabled by default) requires BlueZ and libdbus. On
+Debian/Ubuntu: `sudo apt install bluez libdbus-1-dev`. To build without BLE:
+`cargo build --release --no-default-features --features tui`.
 
 ## Installation
 
@@ -240,7 +244,7 @@ testing/      Docker-based integration test harnesses
 ## Status & Roadmap
 
 FIPS is at **v0.2.0**. The core protocol works end-to-end over UDP, TCP,
-Ethernet, and Tor with a small live mesh of deployed nodes.
+Ethernet, Tor, and Bluetooth (BLE) with a small live mesh of deployed nodes.
 
 ### What works today
 
@@ -253,7 +257,7 @@ Ethernet, and Tor with a small live mesh of deployed nodes.
 - Static hostname mapping (`/etc/fips/hosts`) with auto-reload
 - Per-link metrics (RTT, loss, jitter, goodput) and mesh size estimation
 - ECN congestion signaling (hop-by-hop CE relay, IPv6 CE marking, kernel drop detection)
-- UDP, TCP, Ethernet, and Tor transports (SOCKS5 outbound + directory-mode onion service inbound)
+- UDP, TCP, Ethernet, Tor, and BLE transports (BLE via L2CAP CoC with per-link MTU negotiation)
 - Runtime inspection and peer management via `fipsctl` and `fipstop`
 - Reproducible builds with toolchain pinning and SOURCE_DATE_EPOCH
 - Debian and systemd tarball packaging
@@ -263,7 +267,6 @@ Ethernet, and Tor with a small live mesh of deployed nodes.
 
 - Peer discovery via Nostr relays (bootstrap without static peer lists)
 - Native API for FIPS-aware applications (npub:port addressing)
-- Additional transports (Bluetooth)
 - Security audit of cryptographic protocols
 
 ### Longer-term

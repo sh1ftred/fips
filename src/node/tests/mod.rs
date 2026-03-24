@@ -5,6 +5,8 @@ use crate::PeerIdentity;
 use std::time::Duration;
 
 mod bloom;
+#[cfg(target_os = "linux")]
+mod ble;
 mod disconnect;
 mod discovery;
 #[cfg(target_os = "linux")]

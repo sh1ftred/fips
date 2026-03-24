@@ -485,6 +485,78 @@ HiddenServiceDir /var/lib/tor/fips
 HiddenServicePort 8443 127.0.0.1:8444
 ```
 
+### BLE (`transports.ble.*`)
+
+Bluetooth Low Energy transport using L2CAP Connection-Oriented Channels.
+Requires BlueZ and the `ble` Cargo feature flag (default-on). Linux only;
+guarded by `#[cfg(target_os = "linux")]`. Communicates with BlueZ via D-Bus
+using the `bluer` crate.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `transports.ble.adapter` | string | `"hci0"` | HCI adapter name |
+| `transports.ble.psm` | u16 | `0x0085` (133) | L2CAP Protocol/Service Multiplexer |
+| `transports.ble.mtu` | u16 | `2048` | Default MTU. Actual MTU is negotiated per-link during L2CAP connection setup. |
+| `transports.ble.max_connections` | usize | `7` | Maximum concurrent BLE connections |
+| `transports.ble.connect_timeout_ms` | u64 | `10000` | Outbound connect timeout in milliseconds |
+| `transports.ble.advertise` | bool | `true` | Broadcast BLE beacon advertisements for peer discovery |
+| `transports.ble.scan` | bool | `true` | Listen for BLE beacon advertisements from other nodes |
+| `transports.ble.auto_connect` | bool | `false` | Automatically connect to discovered peers |
+| `transports.ble.accept_connections` | bool | `true` | Accept incoming L2CAP connections |
+| `transports.ble.scan_interval_secs` | u64 | `10` | Interval between BLE scan cycles |
+| `transports.ble.beacon_interval_secs` | u64 | `10` | Interval between beacon advertising bursts |
+| `transports.ble.beacon_duration_secs` | u64 | `3` | Duration of each beacon advertising burst |
+
+**Address format.** BLE peer addresses use the form
+`"adapter/device_address"` — for example, `"hci0/AA:BB:CC:DD:EE:FF"`.
+
+**Scan/probe and tie-breaking.** When `scan` is enabled, the transport
+periodically scans for BLE beacons from other FIPS nodes. Discovered
+peers are probed with per-entry random jitter to prevent herd effects
+when multiple nodes see the same beacon simultaneously. If two nodes
+probe each other at the same time (cross-probe), a deterministic
+tie-breaker based on NodeAddr comparison ensures only one connection
+is established.
+
+**Connection pool.** The `max_connections` parameter limits the number of
+concurrent BLE connections. When the pool is full, the least-recently-used
+connection is evicted to make room for new connections.
+
+### BLE Example
+
+A node using BLE for local mesh discovery alongside UDP for internet peers:
+
+```yaml
+node:
+  identity:
+    persistent: true
+
+tun:
+  enabled: true
+
+transports:
+  udp:
+    bind_addr: "0.0.0.0:2121"
+  ble:
+    adapter: "hci0"
+    advertise: true
+    scan: true
+    auto_connect: true
+    accept_connections: true
+
+peers:
+  - npub: "npub1abc..."
+    alias: "internet-peer"
+    addresses:
+      - transport: udp
+        addr: "203.0.113.5:2121"
+    connect_policy: auto_connect
+```
+
+BLE peers on the local radio range are discovered automatically via
+beacons — no static peer entries needed. Internet peers still require
+explicit configuration.
+
 ## Peers (`peers[]`)
 
 Static peer list. Each entry defines a peer to connect to.
@@ -493,8 +565,8 @@ Static peer list. Each entry defines a peer to connect to.
 |-----------|------|---------|-------------|
 | `peers[].npub` | string | *(required)* | Peer's Nostr public key (npub-encoded) |
 | `peers[].alias` | string | *(none)* | Human-readable name for logging |
-| `peers[].addresses[].transport` | string | *(required)* | Transport type: `udp`, `tcp`, `ethernet`, or `tor` |
-| `peers[].addresses[].addr` | string | *(required)* | Transport address. UDP/TCP: `"host:port"` (IP or DNS hostname). Ethernet: `"interface/mac"` (e.g., `"eth0/aa:bb:cc:dd:ee:ff"`). Tor: `".onion:port"` or `"host:port"` |
+| `peers[].addresses[].transport` | string | *(required)* | Transport type: `udp`, `tcp`, `ethernet`, `tor`, or `ble` |
+| `peers[].addresses[].addr` | string | *(required)* | Transport address. UDP/TCP: `"host:port"` (IP or DNS hostname). Ethernet: `"interface/mac"` (e.g., `"eth0/aa:bb:cc:dd:ee:ff"`). BLE: `"adapter/device_address"` (e.g., `"hci0/AA:BB:CC:DD:EE:FF"`). Tor: `".onion:port"` or `"host:port"` |
 | `peers[].addresses[].priority` | u8 | `100` | Address priority (lower = preferred) |
 | `peers[].connect_policy` | string | `"auto_connect"` | Connection policy: `auto_connect`, `on_demand`, or `manual` |
 | `peers[].auto_reconnect` | bool | `true` | Automatically reconnect after MMP link-dead removal (exponential backoff, unlimited retries) |
@@ -720,6 +792,19 @@ transports:
   #   #   hostname_file: "/var/lib/tor/fips/hostname"
   #   #   bind_addr: "127.0.0.1:8444"
   #   # max_inbound_connections: 64
+  # ble:                              # uncomment to enable BLE transport (Linux only, requires BlueZ)
+  #   adapter: "hci0"                 # HCI adapter name
+  #   psm: 0x0085                     # L2CAP PSM (133)
+  #   mtu: 2048                       # default MTU (negotiated per-link)
+  #   max_connections: 7              # max concurrent BLE connections
+  #   connect_timeout_ms: 10000       # outbound connect timeout
+  #   advertise: true                 # broadcast BLE beacons
+  #   scan: true                      # listen for BLE beacons
+  #   auto_connect: false             # connect to discovered peers
+  #   accept_connections: true         # accept incoming L2CAP connections
+  #   scan_interval_secs: 10          # interval between scan cycles
+  #   beacon_interval_secs: 10        # interval between beacon bursts
+  #   beacon_duration_secs: 3         # duration of each beacon burst
 
 peers:                               # static peer list
   # - npub: "npub1..."
