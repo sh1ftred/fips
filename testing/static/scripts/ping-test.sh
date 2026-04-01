@@ -27,6 +27,9 @@ fi
 # shellcheck source=../generated-configs/npubs.env
 source "$ENV_FILE"
 
+NPUBS=("$NPUB_A" "$NPUB_B" "$NPUB_C" "$NPUB_D" "$NPUB_E")
+LABELS=(A B C D E)
+
 ping_test() {
     local from="$1"
     local to_npub="$2"
@@ -36,7 +39,8 @@ ping_test() {
     local output
     if output=$(docker exec "fips-$from" ping6 -c "$COUNT" -W "$TIMEOUT" "${to_npub}.fips" 2>&1); then
         # Extract round-trip time from ping output
-        local rtt=$(echo "$output" | grep -oE 'time=[0-9.]+' | cut -d= -f2)
+        local rtt
+        rtt=$(echo "$output" | grep -oE 'time=[0-9.]+' | cut -d= -f2)
         if [ -n "$rtt" ]; then
             echo "OK (${rtt}ms)"
         else
@@ -47,6 +51,41 @@ ping_test() {
         echo "FAIL"
         FAILED=$((FAILED + 1))
     fi
+}
+
+# Quietly ping all pairs to check FSP-level convergence.
+ping_all_quiet() {
+    PASSED=0
+    FAILED=0
+    local n=${#LABELS[@]}
+    for ((i=0; i<n; i++)); do
+        for ((j=0; j<n; j++)); do
+            [ "$i" -eq "$j" ] && continue
+            if docker exec "fips-node-${LABELS[$i],,}" \
+                ping6 -c 1 -W 1 "${NPUBS[$j]}.fips" >/dev/null 2>&1; then
+                PASSED=$((PASSED + 1))
+            else
+                FAILED=$((FAILED + 1))
+            fi
+        done
+    done
+}
+
+# Wait until all ping pairs succeed or timeout.
+wait_for_full_connectivity() {
+    local timeout="${1:-30}"
+    local start_secs=$SECONDS
+
+    while (( SECONDS - start_secs < timeout )); do
+        ping_all_quiet
+        if [ "$FAILED" -eq 0 ]; then
+            echo "  All $PASSED pairs reachable after $((SECONDS - start_secs))s"
+            return 0
+        fi
+        sleep 1
+    done
+    echo "  TIMEOUT: $PASSED passed, $FAILED failed after ${timeout}s"
+    return 1
 }
 
 echo "=== FIPS Ping Test ($PROFILE topology) ==="
@@ -69,8 +108,12 @@ elif [ "$PROFILE" = "mesh" ] || [ "$PROFILE" = "mesh-public" ]; then
     wait_for_peers fips-node-d 3 20 || true
     wait_for_peers fips-node-e 3 20 || true
 fi
-# Allow extra time for discovery to propagate across the mesh
-sleep 3
+# Wait for FSP-level connectivity (discovery + session establishment)
+wait_for_full_connectivity 30 || true
+
+# Reset counters for the actual test
+PASSED=0
+FAILED=0
 
 if [ "$PROFILE" = "mesh" ] || [ "$PROFILE" = "mesh-public" ]; then
     # Sparse mesh topology: A-B, B-C, C-D, D-E, E-A, A-D
