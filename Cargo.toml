@@ -12,6 +12,7 @@ readme = "README.md"
 default = ["tui", "ble"]
 tui = ["dep:ratatui"]
 ble = ["dep:bluer"]
+ble-macos = ["dep:bluest"]
 
 [dependencies]
 ratatui = { version = "0.30", optional = true }
@@ -37,6 +38,8 @@ futures = "0.3"
 simple-dns = "0.11.2"
 socket2 = { version = "0.6.2", features = ["all"] }
 tokio-socks = "0.5"
+uuid = "1"
+bluest = { version = "0.6", features = ["l2cap", "unstable"], optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 rtnetlink = "0.20.0"
