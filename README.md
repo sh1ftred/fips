@@ -161,6 +161,19 @@ Alternatively, start a new login shell with:
 exec su -l $USER
 ```
 
+To restart the node after making configuration changes:
+
+```bash
+sudo launchctl unload -w /Library/LaunchDaemons/com.fips.daemon.plist
+sudo launchctl load -w /Library/LaunchDaemons/com.fips.daemon.plist
+```
+
+Check logs for troubleshooting:
+
+```bash
+sudo tail -f /usr/local/var/log/fips/fips.log
+```
+
 > **Note:** On macOS, the TUN device is named `utun<N>` (kernel-assigned)
 > rather than `fips0`.
 
