@@ -94,10 +94,7 @@ impl Tab {
 
     /// Whether this tab has a table view with row selection.
     pub fn has_table(&self) -> bool {
-        matches!(
-            self,
-            Tab::Peers | Tab::Sessions | Tab::Transports
-        )
+        matches!(self, Tab::Peers | Tab::Sessions | Tab::Transports)
     }
 }
 
@@ -172,7 +169,10 @@ impl App {
             return;
         }
         let state = self.table_states.entry(self.active_tab).or_default();
-        let i = state.selected().map(|s| (s + 1).min(count - 1)).unwrap_or(0);
+        let i = state
+            .selected()
+            .map(|s| (s + 1).min(count - 1))
+            .unwrap_or(0);
         state.select(Some(i));
     }
 

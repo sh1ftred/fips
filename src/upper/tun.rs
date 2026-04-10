@@ -6,7 +6,7 @@
 
 use crate::{FipsAddress, TunConfig};
 use futures::TryStreamExt;
-use rtnetlink::{new_connection, Handle, LinkUnspec, RouteMessageBuilder};
+use rtnetlink::{Handle, LinkUnspec, RouteMessageBuilder, new_connection};
 use std::fs::File;
 use std::io::{Read, Write};
 use std::net::Ipv6Addr;
@@ -151,7 +151,9 @@ impl TunDevice {
     /// Returns the number of bytes read into the buffer, or an error.
     /// The buffer should be at least MTU + header size (typically 1500+ bytes).
     pub fn read_packet(&mut self, buf: &mut [u8]) -> Result<usize, TunError> {
-        self.device.read(buf).map_err(|e| TunError::Configure(format!("read failed: {}", e)))
+        self.device
+            .read(buf)
+            .map_err(|e| TunError::Configure(format!("read failed: {}", e)))
     }
 
     /// Shutdown and delete the TUN device.
@@ -263,7 +265,9 @@ pub fn run_tun_reader(
     outbound_tx: TunOutboundTx,
     transport_mtu: u16,
 ) {
-    use super::icmp::{build_dest_unreachable, effective_ipv6_mtu, should_send_icmp_error, DestUnreachableCode};
+    use super::icmp::{
+        DestUnreachableCode, build_dest_unreachable, effective_ipv6_mtu, should_send_icmp_error,
+    };
     use super::tcp_mss::clamp_tcp_mss;
 
     let name = device.name().to_string();
@@ -470,7 +474,13 @@ async fn configure_interface(name: &str, addr: Ipv6Addr, mtu: u16) -> Result<(),
     // Add ip6 rule to ensure fd00::/8 uses the main table, preventing other
     // routing software (e.g. Tailscale) from intercepting FIPS traffic via
     // catch-all rules in auxiliary routing tables.
-    let mut rule_req = handle.rule().add().v6().destination_prefix(fd_prefix, 8).table_id(254).priority(5265);
+    let mut rule_req = handle
+        .rule()
+        .add()
+        .v6()
+        .destination_prefix(fd_prefix, 8)
+        .table_id(254)
+        .priority(5265);
     rule_req.message_mut().header.action = 1.into(); // FR_ACT_TO_TBL
     if let Err(e) = rule_req.execute().await {
         debug!("ip6 rule for fd00::/8 not added (may already exist): {e}");

@@ -254,10 +254,7 @@ impl AsyncPacketSocket {
     }
 
     /// Receive a payload and source MAC address.
-    pub async fn recv_from(
-        &self,
-        buf: &mut [u8],
-    ) -> Result<(usize, [u8; 6]), TransportError> {
+    pub async fn recv_from(&self, buf: &mut [u8]) -> Result<(usize, [u8; 6]), TransportError> {
         loop {
             let mut guard = self
                 .inner
@@ -308,7 +305,10 @@ fn get_mac_addr(fd: RawFd, if_index: i32) -> Result<[u8; 6], TransportError> {
     // Use if_indextoname to get the name
     let mut name_buf = [0u8; libc::IFNAMSIZ];
     let ret = unsafe {
-        libc::if_indextoname(if_index as libc::c_uint, name_buf.as_mut_ptr() as *mut libc::c_char)
+        libc::if_indextoname(
+            if_index as libc::c_uint,
+            name_buf.as_mut_ptr() as *mut libc::c_char,
+        )
     };
     if ret.is_null() {
         return Err(TransportError::StartFailed(format!(
@@ -319,7 +319,10 @@ fn get_mac_addr(fd: RawFd, if_index: i32) -> Result<[u8; 6], TransportError> {
     }
 
     // Copy name into ifreq
-    let name_len = name_buf.iter().position(|&b| b == 0).unwrap_or(name_buf.len());
+    let name_len = name_buf
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(name_buf.len());
     let copy_len = name_len.min(libc::IFNAMSIZ - 1);
     unsafe {
         std::ptr::copy_nonoverlapping(
@@ -359,7 +362,10 @@ fn get_if_mtu(fd: RawFd, if_index: i32) -> Result<u16, TransportError> {
     // Get the interface name from index
     let mut name_buf = [0u8; libc::IFNAMSIZ];
     let ret = unsafe {
-        libc::if_indextoname(if_index as libc::c_uint, name_buf.as_mut_ptr() as *mut libc::c_char)
+        libc::if_indextoname(
+            if_index as libc::c_uint,
+            name_buf.as_mut_ptr() as *mut libc::c_char,
+        )
     };
     if ret.is_null() {
         return Err(TransportError::StartFailed(format!(
@@ -369,7 +375,10 @@ fn get_if_mtu(fd: RawFd, if_index: i32) -> Result<u16, TransportError> {
         )));
     }
 
-    let name_len = name_buf.iter().position(|&b| b == 0).unwrap_or(name_buf.len());
+    let name_len = name_buf
+        .iter()
+        .position(|&b| b == 0)
+        .unwrap_or(name_buf.len());
     let copy_len = name_len.min(libc::IFNAMSIZ - 1);
     unsafe {
         std::ptr::copy_nonoverlapping(

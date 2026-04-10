@@ -3,12 +3,12 @@
 //! Loads configuration and creates the top-level node instance.
 
 use clap::Parser;
-use fips::config::{resolve_identity, IdentitySource};
+use fips::config::{IdentitySource, resolve_identity};
 use fips::version;
 use fips::{Config, Node};
 use std::path::PathBuf;
-use tracing::{error, info, warn, Level};
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing::{Level, error, info, warn};
+use tracing_subscriber::{EnvFilter, fmt};
 
 /// FIPS mesh network daemon
 #[derive(Parser, Debug)]
@@ -31,10 +31,7 @@ async fn main() {
         .with_default_directive(Level::INFO.into())
         .from_env_lossy();
 
-    fmt()
-        .with_env_filter(filter)
-        .with_target(true)
-        .init();
+    fmt().with_env_filter(filter).with_target(true).init();
 
     let args = Args::parse();
 
@@ -47,7 +44,11 @@ async fn main() {
         match Config::load_file(config_path) {
             Ok(config) => (config, vec![config_path.clone()]),
             Err(e) => {
-                error!("Failed to load configuration from {}: {}", config_path.display(), e);
+                error!(
+                    "Failed to load configuration from {}: {}",
+                    config_path.display(),
+                    e
+                );
                 std::process::exit(1);
             }
         }
@@ -80,8 +81,12 @@ async fn main() {
     };
     match &resolved.source {
         IdentitySource::Config => info!("Using identity from configuration"),
-        IdentitySource::KeyFile(p) => info!(path = %p.display(), "Loaded persistent identity from key file"),
-        IdentitySource::Generated(p) => info!(path = %p.display(), "Generated persistent identity, saved to key file"),
+        IdentitySource::KeyFile(p) => {
+            info!(path = %p.display(), "Loaded persistent identity from key file")
+        }
+        IdentitySource::Generated(p) => {
+            info!(path = %p.display(), "Generated persistent identity, saved to key file")
+        }
         IdentitySource::Ephemeral => info!("Using ephemeral identity (new keypair each start)"),
     }
 

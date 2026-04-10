@@ -4,24 +4,24 @@
 //! underlying communication mechanisms (UDP, Ethernet, Tor, etc.) over
 //! which FIPS links are established.
 
-pub mod udp;
 pub mod tcp;
 pub mod tor;
+pub mod udp;
 
 #[cfg(target_os = "linux")]
 pub mod ethernet;
 
-use secp256k1::XOnlyPublicKey;
-use udp::UdpTransport;
-use tcp::TcpTransport;
-use tor::control::TorMonitoringInfo;
-use tor::TorTransport;
 #[cfg(target_os = "linux")]
 use ethernet::EthernetTransport;
+use secp256k1::XOnlyPublicKey;
 use std::fmt;
 use std::net::SocketAddr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tcp::TcpTransport;
 use thiserror::Error;
+use tor::TorTransport;
+use tor::control::TorMonitoringInfo;
+use udp::UdpTransport;
 
 // ============================================================================
 // Packet Channel Types
@@ -1567,10 +1567,8 @@ mod tests {
         let addr_b = TransportAddr::from_string("10.0.0.1:5000");
         let addr_unknown = TransportAddr::from_string("172.16.0.1:6000");
 
-        let transport = PerLinkMtuTransport::new(
-            1280,
-            vec![(addr_a.clone(), 512), (addr_b.clone(), 247)],
-        );
+        let transport =
+            PerLinkMtuTransport::new(1280, vec![(addr_a.clone(), 512), (addr_b.clone(), 247)]);
 
         // Known addresses return their per-link MTU
         assert_eq!(transport.link_mtu(&addr_a), 512);

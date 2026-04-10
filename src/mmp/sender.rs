@@ -117,7 +117,9 @@ impl SenderState {
         match self.last_report_time {
             None => true, // Never sent a report — send immediately
             Some(last) => {
-                let effective = self.report_interval.mul_f64(self.send_failure_backoff_multiplier());
+                let effective = self
+                    .report_interval
+                    .mul_f64(self.send_failure_backoff_multiplier());
                 now.duration_since(last) >= effective
             }
         }
@@ -152,7 +154,11 @@ impl SenderState {
     ///
     /// Sender reports at 2× SRTT clamped to [MIN, MAX].
     pub fn update_report_interval_from_srtt(&mut self, srtt_us: i64) {
-        self.update_report_interval_with_bounds(srtt_us, MIN_REPORT_INTERVAL_MS, MAX_REPORT_INTERVAL_MS);
+        self.update_report_interval_with_bounds(
+            srtt_us,
+            MIN_REPORT_INTERVAL_MS,
+            MAX_REPORT_INTERVAL_MS,
+        );
     }
 
     /// Update the report interval based on SRTT with custom bounds.
@@ -301,7 +307,10 @@ mod tests {
 
         // 2s RTT → 4s, clamped to max 2s
         s.update_report_interval_from_srtt(2_000_000);
-        assert_eq!(s.report_interval(), Duration::from_millis(MAX_REPORT_INTERVAL_MS));
+        assert_eq!(
+            s.report_interval(),
+            Duration::from_millis(MAX_REPORT_INTERVAL_MS)
+        );
     }
 
     #[test]
