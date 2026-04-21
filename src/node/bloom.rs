@@ -9,7 +9,7 @@ use crate::protocol::FilterAnnounce;
 
 use super::{Node, NodeError};
 use std::collections::HashMap;
-use tracing::debug;
+use tracing::{debug, warn};
 
 impl Node {
     /// Collect inbound filters from all peers for outgoing filter computation.
@@ -78,11 +78,41 @@ impl Node {
 
         self.stats_mut().bloom.sent += 1;
 
+        // Self-plausibility check: WARN if our own outgoing filter is
+        // above the antipoison cap. Independent detection signal if
+        // aggregation drift or an ingress-check bypass pushes us over
+        // despite M1. Rate-limited to once per 60s globally — outgoing
+        // cadence can be per-tick during churn, and we want the
+        // operator to see one clear message, not spam.
+        let max_fpr = self.config.node.bloom.max_inbound_fpr;
+        let out_fill = sent_filter.fill_ratio();
+        let out_fpr = out_fill.powi(sent_filter.hash_count() as i32);
+        if out_fpr > max_fpr {
+            let now = std::time::Instant::now();
+            let should_warn = self
+                .last_self_warn
+                .map(|t| now.duration_since(t) >= std::time::Duration::from_secs(60))
+                .unwrap_or(true);
+            if should_warn {
+                self.last_self_warn = Some(now);
+                warn!(
+                    to = %self.peer_display_name(peer_addr),
+                    fill = format_args!("{:.3}", out_fill),
+                    fpr = format_args!("{:.4}", out_fpr),
+                    cap = format_args!("{:.4}", max_fpr),
+                    "Outgoing filter above FPR cap — aggregation drift or missed ingress?"
+                );
+            }
+        }
+
         // Record send and store the filter for change detection
         debug!(
             peer = %self.peer_display_name(peer_addr),
             seq = announce.sequence,
-            est_entries = format_args!("{:.0}", sent_filter.estimated_count()),
+            est_entries = match sent_filter.estimated_count(max_fpr) {
+                Some(n) => format!("{:.0}", n),
+                None => "—".to_string(),
+            },
             set_bits = sent_filter.count_ones(),
             fill = format_args!("{:.1}%", sent_filter.fill_ratio() * 100.0),
             tree_peer = self.is_tree_peer(peer_addr),
@@ -174,6 +204,28 @@ impl Node {
             return;
         }
 
+        // Antipoison FPR cap. Reject announces whose FPR exceeds
+        // node.bloom.max_inbound_fpr. Silent on the wire (no NACK) —
+        // the peer's prior accepted filter and filter_sequence stay
+        // untouched so the peer is not permanently silenced and an
+        // on-path attacker cannot weaponize a single corrupted frame
+        // to wipe a victim's contribution to aggregation.
+        let max_fpr = self.config.node.bloom.max_inbound_fpr;
+        let fill = announce.filter.fill_ratio();
+        let fpr = fill.powi(announce.filter.hash_count() as i32);
+        if fpr > max_fpr {
+            self.stats_mut().bloom.fill_exceeded += 1;
+            warn!(
+                from = %self.peer_display_name(from),
+                seq = announce.sequence,
+                fill = format_args!("{:.3}", fill),
+                fpr = format_args!("{:.4}", fpr),
+                cap = format_args!("{:.4}", max_fpr),
+                "FilterAnnounce above FPR cap — rejected"
+            );
+            return;
+        }
+
         self.stats_mut().bloom.accepted += 1;
 
         let now_ms = std::time::SystemTime::now()
@@ -184,7 +236,10 @@ impl Node {
         debug!(
             from = %self.peer_display_name(from),
             seq = announce.sequence,
-            est_entries = format_args!("{:.0}", announce.filter.estimated_count()),
+            est_entries = match announce.filter.estimated_count(max_fpr) {
+                Some(n) => format!("{:.0}", n),
+                None => "—".to_string(),
+            },
             set_bits = announce.filter.count_ones(),
             fill = format_args!("{:.1}%", announce.filter.fill_ratio() * 100.0),
             tree_peer = self.is_tree_peer(from),
