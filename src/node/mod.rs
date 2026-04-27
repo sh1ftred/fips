@@ -260,7 +260,7 @@ struct PendingConnect {
 ///
 /// The `addr_to_link` map enables dispatching incoming packets to the right
 /// connection before authentication completes.
-// Discovery lookup constants moved to config: node.discovery.timeout_secs, node.discovery.ttl
+// Discovery lookup constants moved to config: node.discovery.attempt_timeouts_secs, node.discovery.ttl
 pub struct Node {
     // === Identity ===
     /// This node's cryptographic identity.

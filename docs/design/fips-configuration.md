@@ -165,12 +165,10 @@ Controls bloom-guided node discovery (LookupRequest/LookupResponse).
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `node.discovery.ttl` | u8 | `64` | Hop limit for LookupRequest forwarding |
-| `node.discovery.timeout_secs` | u64 | `10` | Lookup completion timeout |
+| `node.discovery.attempt_timeouts_secs` | array&lt;u64&gt; | `[1, 2, 4, 8]` | Per-attempt timeouts. Each entry is the deadline for one `LookupRequest` before sending the next attempt with a fresh `request_id`. Length determines total attempt count; default gives 4 attempts and a 15s total budget |
 | `node.discovery.recent_expiry_secs` | u64 | `10` | Dedup cache expiry for recent request IDs |
-| `node.discovery.retry_interval_secs` | u64 | `5` | Retry interval within the timeout window; after this interval without a response, resend the lookup |
-| `node.discovery.max_attempts` | u8 | `2` | Max attempts per lookup (1 = no retry, 2 = one retry) |
-| `node.discovery.backoff_base_secs` | u64 | `30` | Base for exponential backoff after lookup failure; doubles per consecutive failure |
-| `node.discovery.backoff_max_secs` | u64 | `300` | Cap on exponential backoff (5 minutes) |
+| `node.discovery.backoff_base_secs` | u64 | `0` | Optional post-failure suppression base in seconds; doubles per consecutive failure. `0` disables (default) — the per-attempt sequence is the only retry pacing |
+| `node.discovery.backoff_max_secs` | u64 | `0` | Cap on optional post-failure backoff |
 | `node.discovery.forward_min_interval_secs` | u64 | `2` | Transit-side rate limiting: minimum interval between forwarded lookups for the same target |
 
 ### Spanning Tree (`node.tree.*`)
@@ -707,12 +705,10 @@ node:
     identity_size: 10000
   discovery:
     ttl: 64
-    timeout_secs: 10
+    attempt_timeouts_secs: [1, 2, 4, 8]
     recent_expiry_secs: 10
-    retry_interval_secs: 5
-    max_attempts: 2
-    backoff_base_secs: 30
-    backoff_max_secs: 300
+    backoff_base_secs: 0
+    backoff_max_secs: 0
     forward_min_interval_secs: 2
   tree:
     announce_min_interval_ms: 500

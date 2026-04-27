@@ -138,6 +138,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   updated. In-tree `fipstop` is adjusted to the new schema. The
   control socket interface is still pre-1.0 and not covered by
   stability guarantees
+- Discovery rate limiting retuned to be less aggressive at cold start.
+  The previous defaults (30s base post-failure suppression, doubling
+  to a 300s cap, with reset only on parent change / new peer / first
+  RTT / reconnection) reliably outlasted initial mesh convergence: a
+  single timed-out lookup during bloom-filter propagation suppressed
+  any retry for 30s while none of the reset triggers fired on a
+  stable post-handshake topology. The suppression window dictated
+  effective time-to-converge instead of bounding repeat traffic.
+  Replaces the single-lookup-with-internal-retry model
+  (`timeout_secs`/`retry_interval_secs`/`max_attempts`) with a
+  per-attempt timeout sequence in
+  `node.discovery.attempt_timeouts_secs` (default `[1, 2, 4, 8]`).
+  Each attempt sends a fresh `LookupRequest` with a new `request_id`,
+  which lets successive attempts take different forwarding paths as
+  the bloom and tree state evolve. The destination is declared
+  unreachable only after the full sequence is exhausted (15s total
+  at the default). Disables post-failure suppression by default
+  (`backoff_base_secs`/`backoff_max_secs` now both `0`); operators
+  with chatty apps generating repeat lookups against unreachable
+  destinations can opt back in
 - Validate bloom filter fill ratio on FilterAnnounce ingress.
   Inbound FilterAnnounce messages whose derived false-positive
   rate exceeds `node.bloom.max_inbound_fpr` (new config field,

@@ -192,14 +192,20 @@ pub struct DiscoveryConfig {
     /// Hop limit for LookupRequest flood (`node.discovery.ttl`).
     #[serde(default = "DiscoveryConfig::default_ttl")]
     pub ttl: u8,
-    /// Lookup completion timeout in seconds (`node.discovery.timeout_secs`).
-    #[serde(default = "DiscoveryConfig::default_timeout_secs")]
-    pub timeout_secs: u64,
+    /// Per-attempt timeouts in seconds (`node.discovery.attempt_timeouts_secs`).
+    /// Each entry is the time to wait for a response before sending the next
+    /// LookupRequest (with a fresh request_id). Sequence length determines the
+    /// total number of attempts before declaring the destination unreachable.
+    /// Default `[1, 2, 4, 8]` gives 4 attempts and a 15s total budget.
+    #[serde(default = "DiscoveryConfig::default_attempt_timeouts_secs")]
+    pub attempt_timeouts_secs: Vec<u64>,
     /// Dedup cache expiry in seconds (`node.discovery.recent_expiry_secs`).
     #[serde(default = "DiscoveryConfig::default_recent_expiry_secs")]
     pub recent_expiry_secs: u64,
-    /// Base backoff after first lookup failure in seconds (`node.discovery.backoff_base_secs`).
-    /// Doubles per consecutive failure up to `backoff_max_secs`.
+    /// Base backoff after lookup failure in seconds (`node.discovery.backoff_base_secs`).
+    /// Doubles per consecutive failure up to `backoff_max_secs`. Defaults to 0
+    /// (no post-failure suppression); the per-attempt sequence in
+    /// `attempt_timeouts_secs` provides the only retry pacing.
     #[serde(default = "DiscoveryConfig::default_backoff_base_secs")]
     pub backoff_base_secs: u64,
     /// Maximum backoff cap in seconds (`node.discovery.backoff_max_secs`).
@@ -210,28 +216,17 @@ pub struct DiscoveryConfig {
     /// Defense-in-depth against misbehaving nodes.
     #[serde(default = "DiscoveryConfig::default_forward_min_interval_secs")]
     pub forward_min_interval_secs: u64,
-    /// Retry interval within the timeout window in seconds
-    /// (`node.discovery.retry_interval_secs`).
-    /// After this interval without a response, resend the lookup.
-    #[serde(default = "DiscoveryConfig::default_retry_interval_secs")]
-    pub retry_interval_secs: u64,
-    /// Maximum attempts per lookup (`node.discovery.max_attempts`).
-    /// 1 = no retry, 2 = one retry, etc.
-    #[serde(default = "DiscoveryConfig::default_max_attempts")]
-    pub max_attempts: u8,
 }
 
 impl Default for DiscoveryConfig {
     fn default() -> Self {
         Self {
             ttl: 64,
-            timeout_secs: 10,
+            attempt_timeouts_secs: vec![1, 2, 4, 8],
             recent_expiry_secs: 10,
-            backoff_base_secs: 30,
-            backoff_max_secs: 300,
+            backoff_base_secs: 0,
+            backoff_max_secs: 0,
             forward_min_interval_secs: 2,
-            retry_interval_secs: 5,
-            max_attempts: 2,
         }
     }
 }
@@ -240,25 +235,19 @@ impl DiscoveryConfig {
     fn default_ttl() -> u8 {
         64
     }
-    fn default_timeout_secs() -> u64 {
-        10
+    fn default_attempt_timeouts_secs() -> Vec<u64> {
+        vec![1, 2, 4, 8]
     }
     fn default_recent_expiry_secs() -> u64 {
         10
     }
     fn default_backoff_base_secs() -> u64 {
-        30
+        0
     }
     fn default_backoff_max_secs() -> u64 {
-        300
+        0
     }
     fn default_forward_min_interval_secs() -> u64 {
-        2
-    }
-    fn default_retry_interval_secs() -> u64 {
-        5
-    }
-    fn default_max_attempts() -> u8 {
         2
     }
 }
