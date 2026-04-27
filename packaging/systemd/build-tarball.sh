@@ -120,6 +120,8 @@ cp "${SCRIPT_DIR}/fips.service" "${STAGING_DIR}/"
 cp "${SCRIPT_DIR}/fips-dns.service" "${STAGING_DIR}/"
 cp "${PACKAGING_DIR}/common/fips.yaml" "${STAGING_DIR}/"
 cp "${PACKAGING_DIR}/common/hosts" "${STAGING_DIR}/"
+cp "${PACKAGING_DIR}/common/fips-dns-setup" "${STAGING_DIR}/"
+cp "${PACKAGING_DIR}/common/fips-dns-teardown" "${STAGING_DIR}/"
 cp "${SCRIPT_DIR}/README.install.md" "${STAGING_DIR}/"
 
 chmod +x "${STAGING_DIR}/install.sh" "${STAGING_DIR}/uninstall.sh"

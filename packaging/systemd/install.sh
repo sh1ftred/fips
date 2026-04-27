@@ -101,8 +101,8 @@ fi
 install -m 0644 "${SCRIPT_DIR}/fips.service" "${SYSTEMD_DIR}/fips.service"
 install -m 0644 "${SCRIPT_DIR}/fips-dns.service" "${SYSTEMD_DIR}/fips-dns.service"
 install -d -m 0755 /usr/lib/fips
-install -m 0755 "${SCRIPT_DIR}/../common/fips-dns-setup" /usr/lib/fips/fips-dns-setup
-install -m 0755 "${SCRIPT_DIR}/../common/fips-dns-teardown" /usr/lib/fips/fips-dns-teardown
+install -m 0755 "${SCRIPT_DIR}/fips-dns-setup" /usr/lib/fips/fips-dns-setup
+install -m 0755 "${SCRIPT_DIR}/fips-dns-teardown" /usr/lib/fips/fips-dns-teardown
 systemctl daemon-reload
 echo "systemd units and DNS scripts installed."
 
